@@ -170,9 +170,10 @@ class KiCadCLIManager:
         elif self._system == "Windows":
             paths.extend(
                 [
-                    r"C:\Program Files\KiCad\bin\kicad-cli.exe",
-                    r"C:\Program Files (x86)\KiCad\bin\kicad-cli.exe",
-                    r"C:\KiCad\bin\kicad-cli.exe",
+                    "C:/Program Files/KiCad/bin/kicad-cli.exe",
+                    "C:/Program Files (x86)/KiCad/bin/kicad-cli.exe",
+                    "C:/KiCad/bin/kicad-cli.exe",
+                    "C:/Program Files/KiCad/9.0/bin/kicad-cli.exe",
                 ]
             )
         else:  # Linux and other Unix-like systems

@@ -43,7 +43,6 @@ from kicad_mcp.prompts.analyze_schematic_prompt import register_schematic_prompt
 
 
 
-
 # Import context management
 from kicad_mcp.context import kicad_lifespan
 
@@ -227,7 +226,6 @@ def setup_logging() -> None:
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-
 
 def main() -> None:
     """Start the KiCad MCP server (blocking)."""

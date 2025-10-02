@@ -47,6 +47,8 @@ dependencies = [
     "pandas>=2.0.0",
     "pyyaml>=6.0.0",
     "defusedxml>=0.7.0",  # Secure XML parsing
+    "PyPDF2>=3.0.1",
+    "sexpdata>=1.0.2",
 ]
 
 [project.urls]
