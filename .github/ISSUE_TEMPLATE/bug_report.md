@@ -1,11 +1,3 @@
----
-name: Bug Report
-about: Report a bug or issue with the KiCad MCP Server
-title: "[BUG] "
-labels: bug
-assignees: ''
----
-
 ## Bug Description
 <!-- A clear and concise description of the bug -->
 

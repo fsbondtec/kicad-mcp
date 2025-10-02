@@ -22,6 +22,7 @@ This guide will help you set up a Model Context Protocol (MCP) server for KiCad.
 - macOS, Windows, or Linux
 - Python 3.10 or higher
 - KiCad 9.0 or higher
+- uv 0.8.0 or higher
 - Claude Desktop (or another MCP client)
 
 ## Installation Steps
@@ -32,14 +33,15 @@ First, let's install dependencies and set up our environment:
 
 ```bash
 # Clone the repository
-git clone https://github.com/lamaalrajih/kicad-mcp.git .
+git clone https://github.com/lamaalrajih/kicad-mcp.git
+cd kicad-mcp
 
-# Create a virtual environment and activate it
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Install dependencies – `uv` will create a `.venv/` folder automatically
+# (Install `uv` first: `brew install uv` on macOS or `pipx install uv`)
+make install
 
-# Install the MCP SDK and other dependencies
-pip install -r requirements.txt
+# Optional: activate the environment for manual commands
+source .venv/bin/activate
 ```
 
 ### 2. Configure Your Environment
@@ -89,7 +91,7 @@ vim ~/Library/Application\ Support/Claude/claude_desktop_config.json
 {
     "mcpServers": {
         "kicad": {
-            "command": "/ABSOLUTE/PATH/TO/YOUR/PROJECT/kicad-mcp/venv/bin/python",
+            "command": "/ABSOLUTE/PATH/TO/YOUR/PROJECT/kicad-mcp/.venv/bin/python",
             "args": [
                 "/ABSOLUTE/PATH/TO/YOUR/PROJECT/kicad-mcp/main.py"
             ]

@@ -186,3 +186,22 @@ For advanced users:
 1. Use the schematic and PCB analysis tools to extract data
 2. Ask for specific analytical insights on that data
 3. Request recommendations based on the analysis
+
+## Limitations
+
+The current analysis capabilities have some limitations:
+
+1. **Complexity limits**: Very large or complex designs may not be fully analyzed
+2. **KiCad version compatibility**: Best results with the same KiCad version as the server
+3. **Limited semantic understanding**: The analysis is primarily structural rather than functional
+4. **No simulation capabilities**: The server cannot perform electrical simulation
+
+## Future Improvements
+
+Future versions of the KiCad MCP Server aim to enhance the analysis capabilities with:
+
+1. More detailed component information extraction
+2. Better understanding of circuit functionality
+3. Enhanced power and signal analysis
+4. Integration with KiCad's ERC and DRC engines
+5. Support for hierarchical schematics
