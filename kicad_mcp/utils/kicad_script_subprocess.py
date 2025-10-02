@@ -7,7 +7,7 @@ import logging
 import os
 
 # Project Path Setup
-project_root = Path("C:/Git/kicad-mcp/kicad_mcp/utils")
+project_root = Path("C:/GIT/kicad-mcp/kicad_mcp/utils")
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root.parent))  # Add parent directory too
 
