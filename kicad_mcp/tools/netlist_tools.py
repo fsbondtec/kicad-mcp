@@ -16,7 +16,7 @@ def register_netlist_tools(mcp: FastMCP) -> None:
     """
     
     @mcp.tool()
-    async def extract_schematic_netlist(schematic_path: str, ctx: Context) -> Dict[str, Any]:
+    async def extract_schematic_netlist(schematic_path: str, ctx: Context | None) -> Dict[str, Any]:
         """Extract netlist information from a KiCad schematic.
         
         This tool parses a KiCad schematic file and extracts comprehensive
@@ -33,35 +33,42 @@ def register_netlist_tools(mcp: FastMCP) -> None:
         
         if not os.path.exists(schematic_path):
             print(f"Schematic file not found: {schematic_path}")
-            ctx.info(f"Schematic file not found: {schematic_path}")
+            if ctx:
+                ctx.info(f"Schematic file not found: {schematic_path}")
             return {"success": False, "error": f"Schematic file not found: {schematic_path}"}
         
         # Report progress
-        await ctx.report_progress(10, 100)
-        ctx.info(f"Loading schematic file: {os.path.basename(schematic_path)}")
+        if ctx:
+            await ctx.report_progress(10, 100)
+            ctx.info(f"Loading schematic file: {os.path.basename(schematic_path)}")
         
         # Extract netlist information
         try:
-            await ctx.report_progress(20, 100)
-            ctx.info("Parsing schematic structure...")
+            if ctx:
+                await ctx.report_progress(20, 100)
+                ctx.info("Parsing schematic structure...")
             
             netlist_data = extract_netlist(schematic_path)
             
             if "error" in netlist_data:
                 print(f"Error extracting netlist: {netlist_data['error']}")
-                ctx.info(f"Error extracting netlist: {netlist_data['error']}")
+                if ctx:
+                    ctx.info(f"Error extracting netlist: {netlist_data['error']}")
                 return {"success": False, "error": netlist_data['error']}
             
-            await ctx.report_progress(60, 100)
-            ctx.info(f"Extracted {netlist_data['component_count']} components and {netlist_data['net_count']} nets")
+            if ctx:
+                await ctx.report_progress(60, 100)
+                ctx.info(f"Extracted {netlist_data['component_count']} components and {netlist_data['net_count']} nets")
             
             # Analyze the netlist
-            await ctx.report_progress(70, 100)
-            ctx.info("Analyzing netlist data...")
+            if ctx:
+                await ctx.report_progress(70, 100)
+                ctx.info("Analyzing netlist data...")
             
             analysis_results = analyze_netlist(netlist_data)
             
-            await ctx.report_progress(90, 100)
+            if ctx:
+                await ctx.report_progress(90, 100)
             
             # Build result
             result = {
@@ -75,18 +82,20 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             }
             
             # Complete progress
-            await ctx.report_progress(100, 100)
-            ctx.info("Netlist extraction complete")
+            if ctx:
+                await ctx.report_progress(100, 100)
+                ctx.info("Netlist extraction complete")
             
             return result
             
         except Exception as e:
             print(f"Error extracting netlist: {str(e)}")
-            ctx.info(f"Error extracting netlist: {str(e)}")
+            if ctx:
+                ctx.info(f"Error extracting netlist: {str(e)}")
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
-    async def extract_project_netlist(project_path: str, ctx: Context) -> Dict[str, Any]:
+    async def extract_project_netlist(project_path: str, ctx: Context | None) -> Dict[str, Any]:
         """Extract netlist from a KiCad project's schematic.
         
         This tool finds the schematic associated with a KiCad project
@@ -103,11 +112,13 @@ def register_netlist_tools(mcp: FastMCP) -> None:
         
         if not os.path.exists(project_path):
             print(f"Project not found: {project_path}")
-            ctx.info(f"Project not found: {project_path}")
+            if ctx:
+                ctx.info(f"Project not found: {project_path}")
             return {"success": False, "error": f"Project not found: {project_path}"}
         
         # Report progress
-        await ctx.report_progress(10, 100)
+        if ctx:
+            await ctx.report_progress(10, 100)
         
         # Get the schematic file
         try:
@@ -115,15 +126,18 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             
             if "schematic" not in files:
                 print("Schematic file not found in project")
-                ctx.info("Schematic file not found in project")
+                if ctx:
+                    ctx.info("Schematic file not found in project")
                 return {"success": False, "error": "Schematic file not found in project"}
             
             schematic_path = files["schematic"]
             print(f"Found schematic file: {schematic_path}")
-            ctx.info(f"Found schematic file: {os.path.basename(schematic_path)}")
+            if ctx:
+                ctx.info(f"Found schematic file: {os.path.basename(schematic_path)}")
             
             # Extract netlist
-            await ctx.report_progress(20, 100)
+            if ctx:
+                await ctx.report_progress(20, 100)
             
             # Call the schematic netlist extraction
             result = await extract_schematic_netlist(schematic_path, ctx)
@@ -136,11 +150,12 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             
         except Exception as e:
             print(f"Error extracting project netlist: {str(e)}")
-            ctx.info(f"Error extracting project netlist: {str(e)}")
+            if ctx:
+                ctx.info(f"Error extracting project netlist: {str(e)}")
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
-    async def analyze_schematic_connections(schematic_path: str, ctx: Context) -> Dict[str, Any]:
+    async def analyze_schematic_connections(schematic_path: str, ctx: Context | None) -> Dict[str, Any]:
         """Analyze connections in a KiCad schematic.
         
         This tool provides detailed analysis of component connections,
@@ -157,12 +172,14 @@ def register_netlist_tools(mcp: FastMCP) -> None:
         
         if not os.path.exists(schematic_path):
             print(f"Schematic file not found: {schematic_path}")
-            ctx.info(f"Schematic file not found: {schematic_path}")
+            if ctx:
+                ctx.info(f"Schematic file not found: {schematic_path}")
             return {"success": False, "error": f"Schematic file not found: {schematic_path}"}
         
         # Report progress
-        await ctx.report_progress(10, 100)
-        ctx.info(f"Extracting netlist from: {os.path.basename(schematic_path)}")
+        if ctx:
+            await ctx.report_progress(10, 100)
+            ctx.info(f"Extracting netlist from: {os.path.basename(schematic_path)}")
         
         # Extract netlist information
         try:
@@ -170,13 +187,16 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             
             if "error" in netlist_data:
                 print(f"Error extracting netlist: {netlist_data['error']}")
-                ctx.info(f"Error extracting netlist: {netlist_data['error']}")
+                if ctx:
+                    ctx.info(f"Error extracting netlist: {netlist_data['error']}")
                 return {"success": False, "error": netlist_data['error']}
             
-            await ctx.report_progress(40, 100)
+            if ctx:
+                await ctx.report_progress(40, 100)
             
             # Advanced connection analysis
-            ctx.info("Performing connection analysis...")
+            if ctx:
+                ctx.info("Performing connection analysis...")
             
             analysis = {
                 "component_count": netlist_data["component_count"],
@@ -199,7 +219,8 @@ def register_netlist_tools(mcp: FastMCP) -> None:
                         analysis["component_types"][comp_type] = 0
                     analysis["component_types"][comp_type] += 1
             
-            await ctx.report_progress(60, 100)
+            if ctx:
+                await ctx.report_progress(60, 100)
             
             # Identify power nets
             nets = netlist_data.get("nets", {})
@@ -215,7 +236,8 @@ def register_netlist_tools(mcp: FastMCP) -> None:
                         "pin_count": len(pins)
                     })
             
-            await ctx.report_progress(80, 100)
+            if ctx:
+                await ctx.report_progress(80, 100)
             
             # Check for potential issues
             # 1. Nets with only one connection (floating)
@@ -230,7 +252,8 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             # 2. Power pins without connections
             # This would require more detailed parsing of the schematic
             
-            await ctx.report_progress(90, 100)
+            if ctx:
+                await ctx.report_progress(90, 100)
             
             # Build result
             result = {
@@ -240,18 +263,20 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             }
             
             # Complete progress
-            await ctx.report_progress(100, 100)
-            ctx.info("Connection analysis complete")
+            if ctx:
+                await ctx.report_progress(100, 100)
+                ctx.info("Connection analysis complete")
             
             return result
             
         except Exception as e:
             print(f"Error analyzing connections: {str(e)}")
-            ctx.info(f"Error analyzing connections: {str(e)}")
+            if ctx:
+                ctx.info(f"Error analyzing connections: {str(e)}")
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
-    async def find_component_connections(project_path: str, component_ref: str, ctx: Context) -> Dict[str, Any]:
+    async def find_component_connections(project_path: str, component_ref: str, ctx: Context | None) -> Dict[str, Any]:
         """Find all connections for a specific component in a KiCad project.
         
         This tool extracts information about how a specific component
@@ -269,11 +294,13 @@ def register_netlist_tools(mcp: FastMCP) -> None:
         
         if not os.path.exists(project_path):
             print(f"Project not found: {project_path}")
-            ctx.info(f"Project not found: {project_path}")
+            if ctx:
+                ctx.info(f"Project not found: {project_path}")
             return {"success": False, "error": f"Project not found: {project_path}"}
         
         # Report progress
-        await ctx.report_progress(10, 100)
+        if ctx:
+            await ctx.report_progress(10, 100)
         
         # Get the schematic file
         try:
@@ -281,29 +308,34 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             
             if "schematic" not in files:
                 print("Schematic file not found in project")
-                ctx.info("Schematic file not found in project")
+                if ctx:
+                    ctx.info("Schematic file not found in project")
                 return {"success": False, "error": "Schematic file not found in project"}
             
             schematic_path = files["schematic"]
             print(f"Found schematic file: {schematic_path}")
-            ctx.info(f"Found schematic file: {os.path.basename(schematic_path)}")
+            if ctx:
+                ctx.info(f"Found schematic file: {os.path.basename(schematic_path)}")
             
             # Extract netlist
-            await ctx.report_progress(30, 100)
-            ctx.info(f"Extracting netlist to find connections for {component_ref}...")
+            if ctx:
+                await ctx.report_progress(30, 100)
+                ctx.info(f"Extracting netlist to find connections for {component_ref}...")
             
             netlist_data = extract_netlist(schematic_path)
             
             if "error" in netlist_data:
                 print(f"Failed to extract netlist: {netlist_data['error']}")
-                ctx.info(f"Failed to extract netlist: {netlist_data['error']}")
+                if ctx:
+                    ctx.info(f"Failed to extract netlist: {netlist_data['error']}")
                 return {"success": False, "error": netlist_data['error']}
             
             # Check if component exists in the netlist
             components = netlist_data.get("components", {})
             if component_ref not in components:
                 print(f"Component {component_ref} not found in schematic")
-                ctx.info(f"Component {component_ref} not found in schematic")
+                if ctx:
+                    ctx.info(f"Component {component_ref} not found in schematic")
                 return {
                     "success": False, 
                     "error": f"Component {component_ref} not found in schematic",
@@ -314,8 +346,9 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             component_info = components[component_ref]
             
             # Find connections
-            await ctx.report_progress(50, 100)
-            ctx.info("Finding connections...")
+            if ctx:
+                await ctx.report_progress(50, 100)
+                ctx.info("Finding connections...")
             
             nets = netlist_data.get("nets", {})
             connections = []
@@ -355,8 +388,9 @@ def register_netlist_tools(mcp: FastMCP) -> None:
                     connected_nets.append(net_name)
             
             # Analyze the connections
-            await ctx.report_progress(70, 100)
-            ctx.info("Analyzing connections...")
+            if ctx:
+                await ctx.report_progress(70, 100)
+                ctx.info("Analyzing connections...")
             
             # Categorize connections by pin function (if possible)
             pin_functions = {}
@@ -395,12 +429,14 @@ def register_netlist_tools(mcp: FastMCP) -> None:
                 "total_connections": len(connections)
             }
             
-            await ctx.report_progress(100, 100)
-            ctx.info(f"Found {len(connections)} connections for component {component_ref}")
+            if ctx:
+                await ctx.report_progress(100, 100)
+                ctx.info(f"Found {len(connections)} connections for component {component_ref}")
             
             return result
             
         except Exception as e:
             print(f"Error finding component connections: {str(e)}", exc_info=True)
-            ctx.info(f"Error finding component connections: {str(e)}")
+            if ctx:
+                ctx.info(f"Error finding component connections: {str(e)}")
             return {"success": False, "error": str(e)}
