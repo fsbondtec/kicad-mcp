@@ -185,6 +185,15 @@ def register_graph_tools(mcp: FastMCP) -> None:
     async def analyze_functional_block(schematic_path: str, center_component: str,  ctx: Context,
                                     radius: int = 2) -> Dict:
         
+        """
+        Analyze the functional block around a given component in a schematic.
+
+        This function parses a schematic netlist, builds a circuit graph, and performs
+        a neighborhood analysis around a specified central component. The goal is to
+        identify all components (and optionally nets) within a given connection radius,
+        providing the structural basis for Functional Block Analysis.
+        """
+        
         if not os.path.exists(schematic_path):
             ctx.info(f"Schematic not found: {schematic_path}")
             return {"success": False, "error": f"Schematic not found: {schematic_path}"}
