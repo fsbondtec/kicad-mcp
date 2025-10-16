@@ -32,7 +32,7 @@ class CircuitGraph:
         self._build_graph()
     
     def find_path(self, start: str, end: str, ignore_Power: bool, max_depth: int = 10) -> List[str]:
-        """Kürzesten Pfad zwischen Komponenten finden
+        """Find shortest Path between two components
         
         Returns:
             List of component references forming the path
@@ -109,12 +109,70 @@ class CircuitGraph:
             "component_details": []
         } #no path
 
-    def get_neighborhood(self, component: str, radius: int = 2) -> Dict[str, Any]:
-        """Komponenten in gegebener Distanz finden (für Functional Block Analysis)"""
-        pass
+
+    def get_neighborhood(self, component: str, ingore_Power: bool, radius: int = 2) -> Dict[str, Any]:
+        """Find componoents in a given distance (for Functional Block Analysis)"""
+
+        if component not in self.adjacency_list:
+             return {
+                "success": False,
+                "start": component,
+                "neighborhood": [],
+                "details": []
+            }
+        
+        queue = deque([(component, 0)]) #start component and depth 0
+        visited = {component}
+        allNeighbors = []
+
+        while queue:
+            currentNode, currentDepth = queue.popleft()
+
+            if currentDepth >= radius:
+                continue
+
+            for neighbor in self.adjacency_list[currentNode]:
+                if neighbor in visited:
+                    continue
+
+
+                if ingore_Power and  self.nodes[neighbor]["type"] == "net":
+                    if neighbor in GLOBAL_KICAD_POWER_SYMBOLS:
+                        continue
+
+                visited.add(neighbor)
+
+                #the path is only increased if the node is of type component
+                if self.nodes[neighbor]["type"] == "component":
+                    queue.append((neighbor, currentDepth + 1))
+                else:
+                    queue.append((neighbor, currentDepth))
+
+                #whenever Node is a component it is added to the neighbors, nets are only added if the ignore_Power flag is false
+                if self.nodes[neighbor]["type"] == "component":
+                    allNeighbors.append(neighbor)
+                elif not ingore_Power and neighbor in GLOBAL_KICAD_POWER_SYMBOLS:
+                    allNeighbors.append(neighbor)
+
+                
+
+        details = [
+            {"ref": ref, **self.nodes[ref]}
+            for ref in allNeighbors
+            if ref in self.nodes
+        ]
+
+        return {
+            "success": True,
+            "start": component,
+            "radius": radius,
+            "neighborhood": allNeighbors,
+            "details": details
+        }
+
     
     def classify_component_type(self, component_ref: str) -> str:
-        """Komponententyp klassifizieren (kompatibel mit bestehendem System)"""
+        """classify Component Type (compatible with existing System)"""
         pass
 
     def _build_graph(self):

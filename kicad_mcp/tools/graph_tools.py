@@ -180,6 +180,78 @@ def register_graph_tools(mcp: FastMCP) -> None:
         except Exception as e:
             ctx.info(f"Error finding circuit path: {str(e)}")
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
+        
+    @mcp.tool()
+    async def analyze_functional_block(schematic_path: str, center_component: str,  ctx: Context,
+                                    radius: int = 2) -> Dict:
+        
+        if not os.path.exists(schematic_path):
+            ctx.info(f"Schematic not found: {schematic_path}")
+            return {"success": False, "error": f"Schematic not found: {schematic_path}"}
+        
+        if not center_component or not center_component.strip():
+            ctx.info("Start component reference is empty")
+            return {"success": False, "error": "Start component reference cannot be empty"}
+        
+        try:
+            await ctx.report_progress(10, 100)
+            ctx.info(f"Parsing netlist from: {os.path.basename(schematic_path)}")
+            
+            parser = NetlistParser(schematic_path)
+            parser.export_netlist()
+            
+            await ctx.report_progress(40, 100)
+            ctx.info("Structuring netlist data...")
+            
+            structured_data = parser.structure_data()
+            
+            if not structured_data:
+                ctx.info("Failed to structure netlist data")
+                return {"success": False, "error": "Failed to structure netlist data"}
+            
+            await ctx.report_progress(60, 100)
+            ctx.info("Building circuit graph...")
+            
+            graph = CircuitGraph(structured_data)
+            
+            await ctx.report_progress(80, 100)
+            ctx.info(f"Finding path from neighbors {center_component}...")
+            
+            path_result = graph.get_neighborhood(center_component, radius)
+            
+            await ctx.report_progress(100, 100)
+            
+            if not path_result.get("success"):
+                ctx.info(f"No neighbors found for {center_component}")
+                return {
+                    "success": False,
+                    "error": f"No neighbors found for {center_component}",
+                    "center_component": center_component,
+                    "radius": radius
+                }
+            
+            
+            return {
+                "success": True,
+                "schematic_path": schematic_path,
+                "center_component": center_component,
+                "radius": radius,
+                **path_result  
+            }
+            
+        except FileNotFoundError as e:
+            ctx.info(f"File not found: {str(e)}")
+            return {"success": False, "error": f"File not found: {str(e)}"}
+        
+        except ValueError as e:
+            ctx.info(f"Invalid data encountered: {str(e)}")
+            return {"success": False, "error": f"Invalid data: {str(e)}"}
+        
+        except Exception as e:
+            ctx.info(f"Error finding circuit path: {str(e)}")
+            return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
+        
+
 
 
 
