@@ -225,8 +225,7 @@ class TestNetlistParser(unittest.TestCase):
         self.assertEqual(result["components"], {})
         self.assertEqual(result["nets"], {})
 
-    """Integration tests using kinparse"""
-    
+  
     #Unit / Integration test because Kinparse is used  
     @patch('kicad_mcp.utils.net_parser.find_kicad_cli')
     @patch('subprocess.run')

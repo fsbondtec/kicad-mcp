@@ -46,12 +46,13 @@ class CircuitGraph:
                 component_count = 1
             else:
                 component_count = 0
-                return {
-                "success": True,
-                "path": [start],
-                "path_length": component_count,
-                "component_details": [self.nodes[start]] if self.nodes[start]["type"] == "component" else []
-                }
+
+            return {
+            "success": True,
+            "path": [start],
+            "path_length": component_count,
+            "component_details": [self.nodes[start]] if self.nodes[start]["type"] == "component" else []
+            }
             
         
         queue = deque([(start, [start])])
@@ -71,26 +72,25 @@ class CircuitGraph:
                 new_path = path + [neighbor]
                 
                 if neighbor == end:
-                    comp_path = []
+
+                    component_details = []
+                    limited_path = []
                     component_count = 0
                     for node in new_path:
+                        limited_path.append(node)
+
                         if self.nodes[node]["type"] == "component":
                             component_count += 1
-                            comp_path = comp_path + [node]
+                            component_details.append({"ref": node, **self.nodes[node]})
+
 
                             if(component_count >= max_depth):
                                 return {
                                     "success": True,
-                                    "path": new_path,
+                                    "path": limited_path,
                                     "path_length": component_count,
                                     "component_details": component_details
                                 }
-
-                    component_details = [
-                        {"ref": node, **self.nodes[node]} 
-                        for node in new_path
-                            if self.nodes[node]["type"] == "component"
-                    ]
 
                     return {
                         "success": True,
@@ -193,5 +193,6 @@ class CircuitGraph:
                 edge_key = (comp_ref, net_name)
                 if edge_key not in self.edges:
                     self.edges[edge_key] = {"pins": []}
-                    self.edges[edge_key]["pins"].append(pin_num)
+                
+                self.edges[edge_key]["pins"].append(pin_num)
 

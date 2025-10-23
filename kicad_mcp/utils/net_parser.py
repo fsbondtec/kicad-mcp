@@ -60,7 +60,6 @@ class NetlistParser:
                 "lib_id": f"{part.lib}:{part.name}",
                 "value": part.value,
                 "footprint": part.footprint,
-                "datasheet": part.datasheet,
                 "description": part.desc,
                 "lib": part.lib,
                 "name": part.name,
@@ -84,6 +83,8 @@ class NetlistParser:
             "components": self.components,
             "nets": self.nets
         }
+    
+        
 
             
             
