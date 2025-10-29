@@ -17,99 +17,9 @@ class TestNetlistParser(unittest.TestCase):
         self.test_schematic_path = "/path/to/test.kicad_sch"
         self.parser = NetlistParser(self.test_schematic_path)
         
-        # Sample netlist content in KiCad S-expression format
-        self.sample_netlist = (r"""(export (version "E")
-  (design
-    (source "C:\\Users\\messeel\\KiCad\\9.0\\projects\\test_project\\test_project.kicad_sch")
-    (date "2025-10-22T09:40:42+0200")
-    (tool "Eeschema 9.0.4")
-    (sheet (number "1") (name "/") (tstamps "/")
-      (title_block
-        (title)
-        (company)
-        (rev)
-        (date)
-        (source "test_project.kicad_sch")
-        (comment (number "1") (value ""))
-        (comment (number "2") (value ""))
-        (comment (number "3") (value ""))
-        (comment (number "4") (value ""))
-        (comment (number "5") (value ""))
-        (comment (number "6") (value ""))
-        (comment (number "7") (value ""))
-        (comment (number "8") (value ""))
-        (comment (number "9") (value "")))))
-  (components
-    (comp (ref "C1")
-      (value "C")
-      (datasheet "~")
-      (description "Unpolarized capacitor")
-      (fields
-        (field (name "Footprint"))
-        (field (name "Datasheet") "~")
-        (field (name "Description") "Unpolarized capacitor"))
-      (libsource (lib "Device") (part "C") (description "Unpolarized capacitor"))
-      (property (name "Sheetname") (value "Stammblatt"))
-      (property (name "Sheetfile") (value "test_project.kicad_sch"))
-      (property (name "ki_keywords") (value "cap capacitor"))
-      (property (name "ki_fp_filters") (value "C_*"))
-      (sheetpath (names "/") (tstamps "/"))
-      (tstamps "beb6ec9b-3943-446d-ab18-4093cbe77e05"))
-    (comp (ref "R1")
-      (value "15k")
-      (datasheet "~")
-      (description "Resistor")
-      (fields
-        (field (name "Footprint"))
-        (field (name "Datasheet") "~")
-        (field (name "Description") "Resistor"))
-      (libsource (lib "Device") (part "R") (description "Resistor"))
-      (property (name "Sheetname") (value "Stammblatt"))
-      (property (name "Sheetfile") (value "test_project.kicad_sch"))
-      (property (name "ki_keywords") (value "R res resistor"))
-      (property (name "ki_fp_filters") (value "R_*"))
-      (sheetpath (names "/") (tstamps "/"))
-      (tstamps "eda499b2-41ed-49ad-a297-d6eb3153db2d")))
-  (libparts
-    (libpart (lib "Device") (part "C")
-      (description "Unpolarized capacitor")
-      (docs "~")
-      (footprints
-        (fp "C_*"))
-      (fields
-        (field (name "Reference") "C")
-        (field (name "Value") "C")
-        (field (name "Footprint"))
-        (field (name "Datasheet") "~")
-        (field (name "Description") "Unpolarized capacitor"))
-      (pins
-        (pin (num "1") (name "") (type "passive"))
-        (pin (num "2") (name "") (type "passive"))))
-    (libpart (lib "Device") (part "R")
-      (description "Resistor")
-      (docs "~")
-      (footprints
-        (fp "R_*"))
-      (fields
-        (field (name "Reference") "R")
-        (field (name "Value") "R")
-        (field (name "Footprint"))
-        (field (name "Datasheet") "~")
-        (field (name "Description") "Resistor"))
-      (pins
-        (pin (num "1") (name "") (type "passive"))
-        (pin (num "2") (name "") (type "passive")))))
-  (libraries
-    (library (logical "Device")
-      (uri "C:\\Program Files\\KiCad\\9.0\\share\\kicad\\symbols\\/Device.kicad_sym")))
-  (nets
-    (net (code "1") (name "Net-(C1-Pad2)") (class "Default")
-      (node (ref "C1") (pin "2") (pintype "passive"))
-      (node (ref "R1") (pin "1") (pintype "passive")))
-    (net (code "2") (name "unconnected-(C1-Pad1)") (class "Default")
-      (node (ref "C1") (pin "1") (pintype "passive")))
-    (net (code "3") (name "unconnected-(R1-Pad2)") (class "Default")
-      (node (ref "R1") (pin "2") (pintype "passive")))))""") 
+        # Sample netlist content 
+        with open("tests/test_schematics/sample_netlist.net", "r")as f:
+            self.sample_netlist = f.read()
         
     
     def test_init(self):
@@ -231,81 +141,24 @@ class TestNetlistParser(unittest.TestCase):
     @patch('subprocess.run')
     def test_workflow_mock(self, mock_subprocess, mock_find_cli):
 
-        mock_find_cli.return_value = "/usr/bin/kicad-cli"
+      mock_find_cli.return_value = "/usr/bin/kicad-cli"
 
-        #checks if subprocess was called 
-        mock_subprocess.return_value = MagicMock(returncode=0, stderr="")
-        
-        sample_netlist = (r"""(export (version "E")
-  (design
-    (source "C:\\Users\\messeel\\KiCad\\9.0\\projects\\test_project\\test_project.kicad_sch")
-    (date "2025-10-22T10:51:09+0200")
-    (tool "Eeschema 9.0.4")
-    (sheet (number "1") (name "/") (tstamps "/")
-      (title_block
-        (title)
-        (company)
-        (rev)
-        (date)
-        (source "test_project.kicad_sch")
-        (comment (number "1") (value ""))
-        (comment (number "2") (value ""))
-        (comment (number "3") (value ""))
-        (comment (number "4") (value ""))
-        (comment (number "5") (value ""))
-        (comment (number "6") (value ""))
-        (comment (number "7") (value ""))
-        (comment (number "8") (value ""))
-        (comment (number "9") (value "")))))
-  (components
-    (comp (ref "C1")
-      (value "C")
-      (datasheet "~")
-      (description "Unpolarized capacitor")
-      (fields
-        (field (name "Footprint"))
-        (field (name "Datasheet") "~")
-        (field (name "Description") "Unpolarized capacitor"))
-      (libsource (lib "Device") (part "C") (description "Unpolarized capacitor"))
-      (property (name "Sheetname") (value "Stammblatt"))
-      (property (name "Sheetfile") (value "test_project.kicad_sch"))
-      (property (name "ki_keywords") (value "cap capacitor"))
-      (property (name "ki_fp_filters") (value "C_*"))
-      (sheetpath (names "/") (tstamps "/"))
-      (tstamps "95fbc6af-3648-4130-bfca-ae6f350b6a54")))
-  (libparts
-    (libpart (lib "Device") (part "C")
-      (description "Unpolarized capacitor")
-      (docs "~")
-      (footprints
-        (fp "C_*"))
-      (fields
-        (field (name "Reference") "C")
-        (field (name "Value") "C")
-        (field (name "Footprint"))
-        (field (name "Datasheet") "~")
-        (field (name "Description") "Unpolarized capacitor"))
-      (pins
-        (pin (num "1") (name "") (type "passive"))
-        (pin (num "2") (name "") (type "passive")))))
-  (libraries
-    (library (logical "Device")
-      (uri "C:\\Program Files\\KiCad\\9.0\\share\\kicad\\symbols\\/Device.kicad_sym")))
-  (nets
-    (net (code "1") (name "GND") (class "Default")
-      (node (ref "C1") (pin "2") (pintype "passive")))
-    (net (code "2") (name "unconnected-(C1-Pad1)") (class "Default")
-      (node (ref "C1") (pin "1") (pintype "passive")))))""")
-        
-        with patch('os.path.exists', return_value=True):
-            with patch('builtins.open', mock_open(read_data=sample_netlist)):
-                parser = NetlistParser("/test/path.kicad_sch")
-                parser.export_netlist()
-                result = parser.structure_data()
-                
-                self.assertIn("C1", result["components"])
-                self.assertIn("GND", result["nets"])
-                self.assertEqual(result["components"]["C1"]["value"], "C")
+      #checks if subprocess was called 
+      mock_subprocess.return_value = MagicMock(returncode=0, stderr="")
+
+      # Sample netlist content 
+      with open("tests/test_schematics/sample_netlist_Integration.net", "r")as f:
+        sample_netlist = f.read()
+              
+      with patch('os.path.exists', return_value=True):
+          with patch('builtins.open', mock_open(read_data=sample_netlist)):
+              parser = NetlistParser("/test/path.kicad_sch")
+              parser.export_netlist()
+              result = parser.structure_data()
+              
+              self.assertIn("C1", result["components"])
+              self.assertIn("GND", result["nets"])
+              self.assertEqual(result["components"]["C1"]["value"], "C")
 
     
         

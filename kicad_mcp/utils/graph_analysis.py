@@ -149,12 +149,9 @@ class CircuitGraph:
                     queue.append((neighbor, currentDepth))
 
                 #whenever Node is a component it is added to the neighbors, nets are only added if the ignore_Power flag is false
-                if self.nodes[neighbor]["type"] == "component":
-                    allNeighbors.append(neighbor)
-                elif not ingore_Power and neighbor in GLOBAL_KICAD_POWER_SYMBOLS:
+                if (self.nodes[neighbor]["type"] == "component") or (not ingore_Power and neighbor in GLOBAL_KICAD_POWER_SYMBOLS):
                     allNeighbors.append(neighbor)
 
-                
 
         details = [
             {"ref": ref, **self.nodes[ref]}
@@ -179,15 +176,17 @@ class CircuitGraph:
 
         for ref, attrs in self.netlist_data['components'].items():
                 self.nodes[ref] = {"type": "component", **attrs}
+                self.adjacency_list[ref] = set() #initialize 
 
         for net_name, connections in self.netlist_data['nets'].items():
             self.nodes[net_name] = {"type": "net"}
+            self.adjacency_list[net_name] = set() #initialize so that nodes with no edges are also in adjacency List 
 
             for conn in connections:
                 comp_ref = conn['component']
                 pin_num = conn['pin']
 
-                self.adjacency_list[comp_ref].add(net_name) #für net und für komponente
+                self.adjacency_list[comp_ref].add(net_name) #for nets and for components
                 self.adjacency_list[net_name].add(comp_ref)
 
                 edge_key = (comp_ref, net_name)

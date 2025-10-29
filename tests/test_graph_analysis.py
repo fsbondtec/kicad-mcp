@@ -8,7 +8,6 @@ from kicad_mcp.utils.graph_analysis import CircuitGraph, GLOBAL_KICAD_POWER_SYMB
 
 class TestCircuitGraph:
 
-
     def test_single_component_no_nets(self):
         """Test graph with single component and no nets"""
         netlist_data = {
@@ -265,15 +264,176 @@ class TestFindPath:
 
 class TestGetNeighborhood:
     """Tests for neighborhood analysis"""
-
+    
+    @pytest.fixture
+    def test_netlist(self):
+        """One component is in the middle, multiple compononents are connected to it"""
+        return {
+            'components': {
+                'C1': {'lib_id': 'Device:C', 'value': 'C', 'footprint': '', 'description': 'Unpolarized capacitor', 'lib': 'Device', 'name': 'C', 'sheet_names': '/'}, 
+                'C2': {'lib_id': 'Device:C', 'value': 'C', 'footprint': '', 'description': 'Unpolarized capacitor', 'lib': 'Device', 'name': 'C', 'sheet_names': '/'}, 
+                'R1': {'lib_id': 'Device:R', 'value': 'R', 'footprint': '', 'description': 'Resistor', 'lib': 'Device', 'name': 'R', 'sheet_names': '/'}, 
+                'R2': {'lib_id': 'Device:R', 'value': 'R', 'footprint': '', 'description': 'Resistor', 'lib': 'Device', 'name': 'R', 'sheet_names': '/'},
+                'U1': {'lib_id': 'Interface_USB:TS3USBCA410', 'value': 'TS3USBCA410', 'footprint': 'Package_DFN_QFN:UQFN-16_1.8x2.6mm_P0.4mm', 'description': 'USB Type-C, SBU 3:1 multiplexer, 500MHz bandwidth, UQFN-16', 'lib': 'Interface_USB', 'name': 'TS3USBCA410', 'sheet_names': '/'}}, 
+             
+            'nets': {
+                'Net-(U1-GND)': [{'component': 'C2', 'pin': '1'}, {'component': 'U1', 'pin': '9'}], 
+                'Net-(U1-MIC_GND1{slash}Ln1)': [{'component': 'C1', 'pin': '1'}, {'component': 'U1', 'pin': '2'}], 
+                'Net-(U1-SBU1)': [{'component': 'R1', 'pin': '1'}, {'component': 'U1', 'pin': '11'}], 
+                'Net-(U1-SEL0{slash}SDA)': [{'component': 'R2', 'pin': '1'}, {'component': 'U1', 'pin': '6'}],
+            }
+        }
+    
+    @pytest.fixture
+    def test_netlis_radius_2(self):
+        return {
+            'components': {
+                'C1': {'lib_id': 'Device:C', 'value': 'C', 'footprint': '', 'description': 'Unpolarized capacitor', 'lib': 'Device', 'name': 'C', 'sheet_names': '/'}, 
+                'C2': {'lib_id': 'Device:C', 'value': 'C', 'footprint': '', 'description': 'Unpolarized capacitor', 'lib': 'Device', 'name': 'C', 'sheet_names': '/'}, 
+                'R1': {'lib_id': 'Device:R', 'value': 'R', 'footprint': '', 'description': 'Resistor', 'lib': 'Device', 'name': 'R', 'sheet_names': '/'}, 
+                'R2': {'lib_id': 'Device:R', 'value': 'R', 'footprint': '', 'description': 'Resistor', 'lib': 'Device', 'name': 'R', 'sheet_names': '/'},
+                'R3': {'lib_id': 'Device:R', 'value': 'R', 'footprint': '', 'description': 'Resistor', 'lib': 'Device', 'name': 'R', 'sheet_names': '/'},
+                'C3': {'lib_id': 'Device:C', 'value': 'C', 'footprint': '', 'description': 'Unpolarized capacitor', 'lib': 'Device', 'name': 'C', 'sheet_names': '/'},
+                'U1': {'lib_id': 'Interface_USB:TS3USBCA410', 'value': 'TS3USBCA410', 'footprint': 'Package_DFN_QFN:UQFN-16_1.8x2.6mm_P0.4mm', 'description': 'USB Type-C, SBU 3:1 multiplexer, 500MHz bandwidth, UQFN-16', 'lib': 'Interface_USB', 'name': 'TS3USBCA410', 'sheet_names': '/'}}, 
+             
+            'nets': {
+                'Net-(U1-GND)': [{'component': 'C2', 'pin': '1'}, {'component': 'U1', 'pin': '9'}], 
+                'Net-(U1-MIC_GND1{slash}Ln1)': [{'component': 'C1', 'pin': '1'}, {'component': 'U1', 'pin': '2'}], 
+                'Net-(U1-SBU1)': [{'component': 'R1', 'pin': '1'}, {'component': 'U1', 'pin': '11'}], 
+                'Net-(U1-SEL0{slash}SDA)': [{'component': 'R2', 'pin': '1'}, {'component': 'U1', 'pin': '6'}],
+                'Net-(R2-R3)': [{'component': 'R2', 'pin': '2'}, {'component': 'R3', 'pin': '1'}],
+                'Net-(C2-C3)': [{'component': 'C2', 'pin': '2'}, {'component': 'C3', 'pin': '1'}]
+            }
+        }
     
 
+    
+    def test_component_nonexistent(self, test_netlist):
+        """Test neighborhood of non-existent component"""
+        graph = CircuitGraph(test_netlist)
+        result = graph.get_neighborhood('R10', ingore_Power=False)
         
+        assert result['success'] is False
+        assert result['start'] == 'R10'
+        assert len(result['neighborhood']) == 0
+
+    def test_neighbors(self, test_netlist):
+        """Test neighborhood of components with radius 1"""
+        graph = CircuitGraph(test_netlist)
+        result = graph.get_neighborhood('U1', ingore_Power=False, radius=1)
+
+        assert result['success'] is True
+        assert result['start'] == 'U1'
+        assert result['radius'] == 1
+        assert len(result['neighborhood']) == 4
+
+        assert 'R1' in result['neighborhood']
+        assert 'R2' in result['neighborhood']
+        assert 'C1' in result['neighborhood']
+        assert 'C2' in result['neighborhood']
+    
+    def test_neighborhood_radius_2(self, test_netlis_radius_2):
+        """Test neighborhood of components with radius 2"""
+        graph = CircuitGraph(test_netlis_radius_2)
+        result = graph.get_neighborhood('U1', ingore_Power=False, radius=2)
+
+        assert result['success'] is True
+        assert result['start'] == 'U1'
+        assert result['radius'] == 2
+        assert len(result['neighborhood']) == 6
+
+        assert 'R1' in result['neighborhood']
+        assert 'R2' in result['neighborhood']
+        assert 'C1' in result['neighborhood']
+        assert 'C2' in result['neighborhood']
+        assert 'R3' in result['neighborhood']
+        assert 'C3' in result['neighborhood']
+
+    def test_neighborhood_power_true(self):
+        netlist = {
+             'components': {
+                'C1': {'lib_id': 'Device:C', 'value': 'C', 'footprint': '', 'description': 'Unpolarized capacitor', 'lib': 'Device', 'name': 'C', 'sheet_names': '/'}, 
+                'U1': {'lib_id': 'Interface_USB:TS3USBCA410', 'value': 'TS3USBCA410', 'footprint': 'Package_DFN_QFN:UQFN-16_1.8x2.6mm_P0.4mm', 'description': 'USB Type-C, SBU 3:1 multiplexer, 500MHz bandwidth, UQFN-16', 'lib': 'Interface_USB', 'name': 'TS3USBCA410', 'sheet_names': '/'}}, 
+   
+                  
+            'nets': {
+                'GND': [{'component': 'C1', 'pin': '1'}, {'component': 'U1', 'pin': '9'}], 
+            }
+                            
+        }
+
+        graph = CircuitGraph(netlist)
+        result = graph.get_neighborhood('U1', ingore_Power=True, radius=1)
+
+        assert result['success'] is True
+        assert result['start'] == 'U1'
+        assert result['radius'] == 1
+        assert len(result['neighborhood']) == 0
+
+        assert 'C1' not in result['neighborhood']
+
+    def test_neighborhood_power_false(self):
+        netlist = {
+             'components': {
+                'C1': {'lib_id': 'Device:C', 'value': 'C', 'footprint': '', 'description': 'Unpolarized capacitor', 'lib': 'Device', 'name': 'C', 'sheet_names': '/'}, 
+                'U1': {'lib_id': 'Interface_USB:TS3USBCA410', 'value': 'TS3USBCA410', 'footprint': 'Package_DFN_QFN:UQFN-16_1.8x2.6mm_P0.4mm', 'description': 'USB Type-C, SBU 3:1 multiplexer, 500MHz bandwidth, UQFN-16', 'lib': 'Interface_USB', 'name': 'TS3USBCA410', 'sheet_names': '/'}}, 
+   
+                  
+            'nets': {
+                'GND': [{'component': 'C1', 'pin': '1'}, {'component': 'U1', 'pin': '9'}], 
+            }
+                            
+        }
+
+        graph = CircuitGraph(netlist)
+        result = graph.get_neighborhood('U1', ingore_Power=False, radius=1)
+
+        assert result['success'] is True
+        assert result['start'] == 'U1'
+        assert result['radius'] == 1
+
+        #count with GND net as node -> depends on abstraction level 
+        assert len(result['neighborhood']) == 2
+        assert 'C1' in result['neighborhood']
+    
+    def test_neighborhood_isolated_component(self):
+        """Test neighborhood of isolated component"""
+
+        netlist = {
+            'components': {
+                'R1': {'value': '1k'}
+            },
+            'nets': {}
+        }
+        graph = CircuitGraph(netlist)
+        result = graph.get_neighborhood('R1', ingore_Power=False, radius=1)
         
+        assert result['success'] is True
+        assert len(result['neighborhood']) == 0
 
+class TestEdgeCases:
+    """Tests for edge cases and error conditions"""
+    
+    def test_duplicate_connections(self):
+        """Test duplicate pin connections"""
 
-
-
-
-
-
+        netlist_data = {
+            'components': {
+                'R1': {'value': '1k'}
+            },
+            'nets': {
+                'Net1': [
+                    {'component': 'R1', 'pin': '1'},
+                    {'component': 'R1', 'pin': '1'} 
+                ]
+            }
+        }
+        graph = CircuitGraph(netlist_data)
+    
+        #when duplicate nodes and nets are added once because of set as adjacency List
+        assert 'R1' in graph.nodes
+        assert 'Net1' in graph.adjacency_list['R1']
+        assert 'R1' in graph.adjacency_list['Net1']
+    
+    
+    
