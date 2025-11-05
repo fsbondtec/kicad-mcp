@@ -59,9 +59,10 @@ def register_bom_tools(mcp: FastMCP) -> None:
         # Look for BOM files
         bom_files = {}
          # Report progress
-        await ctx.report_progress(10, 100)
-        ctx.info(f"Looking for BOM files related to {os.path.basename(project_path)}")
-        
+        if ctx:
+            await ctx.report_progress(10, 100)
+            ctx.info(f"Looking for BOM files related to {os.path.basename(project_path)}")
+            
         # Get all project files
         files = get_project_files(project_path)
         
@@ -77,7 +78,8 @@ def register_bom_tools(mcp: FastMCP) -> None:
         
         if not bom_files:
             logging.debug("No BOM files found for project")
-            ctx.info("No BOM files found for project")
+            if ctx:
+                ctx.info("No BOM files found for project")
             return {
                 "success": False, 
                 "error": "No BOM files found. Export a BOM from KiCad first.",
@@ -214,7 +216,8 @@ def register_bom_tools(mcp: FastMCP) -> None:
         # We need the schematic file to generate a BOM
         if "schematic" not in files:
             logging.debug("Schematic file not found in project")
-            ctx.info("Schematic file not found in project")
+            if ctx:
+                ctx.info("Schematic file not found in project")
             return {"success": False, "error": "Schematic file not found"}
         
         schematic_paths = files["schematic"]
@@ -231,6 +234,9 @@ def register_bom_tools(mcp: FastMCP) -> None:
         export_results = []
         for schematic_path in schematic_paths:
             schematic_name = os.path.splitext(os.path.basename(schematic_path))[0]
+
+            #Initialize 
+            export_result = {"success": False, "error": "No export method attempted"}
 
             if kicad_modules_available:
                 try:

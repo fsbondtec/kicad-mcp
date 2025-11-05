@@ -169,13 +169,15 @@ def register_netlist_tools(mcp: FastMCP) -> None:
             }
             
         except Exception as e:
-            ctx.info(f"Error extracting project netlist: {str(e)}")
+            if ctx:
+                ctx.info(f"Error extracting project netlist: {str(e)}")
             return {"success": False, "error": str(e)}
 
             
         except Exception as e:
             print(f"Error extracting project netlist: {str(e)}")
-            ctx.info(f"Error extracting project netlist: {str(e)}")
+            if ctx:
+                ctx.info(f"Error extracting project netlist: {str(e)}")
             return {"success": False, "error": str(e)}
 
     @mcp.tool()
