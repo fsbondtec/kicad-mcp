@@ -33,9 +33,8 @@ async def run_drc_via_cli(pcb_file: str, ctx: Context | None) -> Dict[str, Any]:
             output_file = os.path.join(temp_dir, "drc_report.json")
             
             # Find kicad-cli executable
-            #kicad_cli = find_kicad_cli()
+            kicad_cli = find_kicad_cli()
             from kicad_mcp.config import KICAD_APP_PATH
-            kicad_cli = os.path.join(KICAD_APP_PATH, "bin", "kicad-cli.exe")
             
             if not kicad_cli:
                 print("kicad-cli not found in PATH or common installation locations")
@@ -145,8 +144,9 @@ def find_kicad_cli() -> Optional[str]:
     if system == "Windows":
         # Common Windows installation path
         potential_paths = [
-            r"C:\Program Files\KiCad\bin\kicad-cli.exe",
-            r"C:\Program Files (x86)\KiCad\bin\kicad-cli.exe"
+            "C:/Program Files/KiCad/9.0/bin/kicad-cli.exe",
+            "C:/Program Files/KiCad/bin/kicad-cli.exe",
+            "C:/Program Files (x86)/KiCad/bin/kicad-cli.exe"
         ]
     elif system == "Darwin":  # macOS
         # Common macOS installation paths

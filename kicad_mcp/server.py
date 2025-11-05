@@ -31,6 +31,7 @@ from kicad_mcp.tools.pattern_tools import register_pattern_tools
 from  kicad_mcp.tools.component_tool import register_component_tools
 from  kicad_mcp.tools.create_foodprint_symbol_tools import register_footprint_symbol_tools
 from kicad_mcp.tools.routing_tools import register_routing_tools
+from kicad_mcp.tools.graph_tools import register_graph_tools
 
 # Import prompt handlers
 from kicad_mcp.prompts.templates import register_prompts
@@ -167,6 +168,7 @@ def create_server() -> FastMCP:
     register_component_tools(mcp)
     register_footprint_symbol_tools(mcp)
     register_routing_tools(mcp)
+    register_graph_tools(mcp)
 
     
     # Register prompts
