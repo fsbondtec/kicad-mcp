@@ -34,7 +34,8 @@ class TestNetlistParser(unittest.TestCase):
     @patch('subprocess.run')
     @patch('os.path.exists')
     @patch('builtins.open', new_callable=mock_open)
-    #teste den Netlist Export
+    
+    #test netlist export
     def test_export_netlist_successfull(self, mock_file, mock_exists, 
                                     mock_subprocess, mock_find_cli):
         """Test export with MOCKED external dependencies"""

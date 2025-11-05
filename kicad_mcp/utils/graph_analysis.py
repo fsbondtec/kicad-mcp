@@ -18,7 +18,7 @@ GLOBAL_KICAD_POWER_SYMBOLS = [
 ]
 
 class CircuitGraph:
-    def __init__(self, netlist_data: Dict[str, Any]):
+    def __init__(self, netlist_data: Dict[str, Any], abstraction_level):
         """Initialisiere Graph aus KiCad-Netlist-Daten
         
         Args:
@@ -28,6 +28,7 @@ class CircuitGraph:
         self.edges = {}
         self.adjacency_list = defaultdict(set)
         self.netlist_data = netlist_data
+        self.abstraction_level = abstraction_level
 
         self._build_graph()
     

@@ -88,7 +88,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def get_circuit_path(schematic_path: str, start_component: str, 
-                            end_component: str, ignore_PowerNets: bool, max_depth: int, ctx: Context) -> Dict:
+                            end_component: str, max_depth: int, ctx: Context, abstraction_level = "medium") -> Dict:
         """Find the shortest path between two components in a circuit.
     
         This tool analyzes the circuit netlist and finds the connection path
@@ -98,7 +98,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             schematic_path: Path to the KiCad schematic file (.kicad_sch)
             start_component: Starting component reference (e.g., "R1")
             end_component: Ending component reference (e.g., "U3")
-            ignore_PowerNets: Whether to ignore power nets in path finding
+            abstraction_level: high | medium | low -> filter the graph based on abstraction level
             max_depth: Maximum number of components in the path
             ctx: MCP context for progress reporting
             
@@ -138,13 +138,12 @@ def register_graph_tools(mcp: FastMCP) -> None:
             await ctx.report_progress(60, 100)
             ctx.info("Building circuit graph...")
             
-            graph = CircuitGraph(structured_data)
+            graph = CircuitGraph(structured_data, abstraction_level)
             
             await ctx.report_progress(80, 100)
             ctx.info(f"Finding path from {start_component} to {end_component}...")
             
-            path_result = graph.find_path(start_component, end_component, 
-                                        ignore_PowerNets, max_depth)
+            path_result = graph.find_path(start_component, end_component,  max_depth)
             
             await ctx.report_progress(100, 100)
             
@@ -164,7 +163,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 "schematic_path": schematic_path,
                 "start_component": start_component,
                 "end_component": end_component,
-                "ignore_power_nets": ignore_PowerNets,
+                "abstraction_level": abstraction_level,
                 "max_depth": max_depth,
                 **path_result  
             }
@@ -260,9 +259,44 @@ def register_graph_tools(mcp: FastMCP) -> None:
             ctx.info(f"Error finding circuit path: {str(e)}")
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
         
-
-
-
+    @mcp.tool()
+    async def parse_netlist(schematic_path: str, ctx: Context) -> Dict[str, Any]:
+        """Parse a KiCad schematic and return a basic netlist summary.
+        
+        Args:
+            schematic_path: Path to the KiCad schematic file (.kicad_sch)
+            ctx: MCP context for progress reporting
+            
+        Returns:
+            Dictionary with basic component and net counts
+        """
+        try:
+            if not schematic_path.endswith('.kicad_sch'):
+                return {"success": False, "error": "Invalid file type. Expected .kicad_sch file"}
+            
+            if not os.path.exists(schematic_path):
+                return {"success": False, "error": f"Schematic file not found: {schematic_path}"}
+            
+            parser = NetlistParser(schematic_path)
+            parser.export_netlist()
+            structured_data = parser.structure_data()
+            
+            if not structured_data:
+                return {"success": False, "error": "Failed to structure netlist data"}
+            
+            components = structured_data.get('components', {})
+            nets = structured_data.get('nets', {})
+            
+            return {
+                "success": True,
+                "total_components": len(components),
+                "total_nets": len(nets),
+                "components": list(components.keys())
+            }
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+                
 
 
 
