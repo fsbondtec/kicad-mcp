@@ -17,7 +17,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
     
 
     @mcp.tool()
-    async def get_netGraph(schematic_path: str, ctx: Context):
+    async def get_netGraph(schematic_path: str, ctx: Context | None):
         """Get the complete network graph of a KiCad schematic.
         
         Args:
@@ -88,7 +88,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def get_circuit_path(schematic_path: str, start_component: str, 
-                            end_component: str, max_depth: int, ctx: Context, abstraction_level = "medium") -> Dict:
+                            end_component: str, max_depth: int, ctx: Context | None, abstraction_level = "medium") -> Dict:
         """Find the shortest path between two components in a circuit.
     
         This tool analyzes the circuit netlist and finds the connection path
@@ -107,48 +107,58 @@ def register_graph_tools(mcp: FastMCP) -> None:
         """
 
         if not os.path.exists(schematic_path):
-            ctx.info(f"Schematic not found: {schematic_path}")
+            if ctx:
+                ctx.info(f"Schematic not found: {schematic_path}")
             return {"success": False, "error": f"Schematic not found: {schematic_path}"}
         
         # Validate component references
         if not start_component or not start_component.strip():
-            ctx.info("Start component reference is empty")
+            if ctx:
+                ctx.info("Start component reference is empty")
             return {"success": False, "error": "Start component reference cannot be empty"}
         
         if not end_component or not end_component.strip():
-            ctx.info("End component reference is empty")
+            if ctx:
+                ctx.info("End component reference is empty")
             return {"success": False, "error": "End component reference cannot be empty"}
         
         try:
-            await ctx.report_progress(10, 100)
-            ctx.info(f"Parsing netlist from: {os.path.basename(schematic_path)}")
-            
+            if ctx:
+                await ctx.report_progress(10, 100)
+                ctx.info(f"Parsing netlist from: {os.path.basename(schematic_path)}")
+                
             parser = NetlistParser(schematic_path)
             parser.export_netlist()
             
-            await ctx.report_progress(40, 100)
-            ctx.info("Structuring netlist data...")
+            if ctx:
+                await ctx.report_progress(40, 100)
+                ctx.info("Structuring netlist data...")
             
             structured_data = parser.structure_data()
             
             if not structured_data:
-                ctx.info("Failed to structure netlist data")
+                if ctx:
+                    ctx.info("Failed to structure netlist data")
                 return {"success": False, "error": "Failed to structure netlist data"}
             
-            await ctx.report_progress(60, 100)
-            ctx.info("Building circuit graph...")
+            if ctx:
+                await ctx.report_progress(60, 100)
+                ctx.info("Building circuit graph...")
             
             graph = CircuitGraph(structured_data, abstraction_level)
             
-            await ctx.report_progress(80, 100)
-            ctx.info(f"Finding path from {start_component} to {end_component}...")
-            
+            if ctx:
+                await ctx.report_progress(80, 100)
+                ctx.info(f"Finding path from {start_component} to {end_component}...")
+                
             path_result = graph.find_path(start_component, end_component,  max_depth)
             
-            await ctx.report_progress(100, 100)
+            if ctx:
+                await ctx.report_progress(100, 100)
             
             if not path_result.get("success"):
-                ctx.info(f"No path found between {start_component} and {end_component}")
+                if ctx:
+                    ctx.info(f"No path found between {start_component} and {end_component}")
                 return {
                     "success": False,
                     "error": f"No path found between {start_component} and {end_component}",
@@ -156,7 +166,8 @@ def register_graph_tools(mcp: FastMCP) -> None:
                     "end_component": end_component
                 }
             
-            ctx.info(f"Path found with {path_result.get('path_length', 0)} components")
+            if ctx:
+                ctx.info(f"Path found with {path_result.get('path_length', 0)} components")
             
             return {
                 "success": True,
@@ -169,19 +180,22 @@ def register_graph_tools(mcp: FastMCP) -> None:
             }
             
         except FileNotFoundError as e:
-            ctx.info(f"File not found: {str(e)}")
+            if ctx:
+                ctx.info(f"File not found: {str(e)}")
             return {"success": False, "error": f"File not found: {str(e)}"}
         
         except ValueError as e:
-            ctx.info(f"Invalid data encountered: {str(e)}")
+            if ctx:
+                ctx.info(f"Invalid data encountered: {str(e)}")
             return {"success": False, "error": f"Invalid data: {str(e)}"}
         
         except Exception as e:
-            ctx.info(f"Error finding circuit path: {str(e)}")
+            if ctx:
+                ctx.info(f"Error finding circuit path: {str(e)}")
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
         
     @mcp.tool()
-    async def analyze_functional_block(schematic_path: str, center_component: str,  ctx: Context,
+    async def analyze_functional_block(schematic_path: str, center_component: str,  ctx: Context | None,
                                     radius: int = 2) -> Dict:
         
         """
@@ -194,43 +208,52 @@ def register_graph_tools(mcp: FastMCP) -> None:
         """
         
         if not os.path.exists(schematic_path):
-            ctx.info(f"Schematic not found: {schematic_path}")
+            if ctx:
+                ctx.info(f"Schematic not found: {schematic_path}")
             return {"success": False, "error": f"Schematic not found: {schematic_path}"}
         
         if not center_component or not center_component.strip():
-            ctx.info("Start component reference is empty")
+            if ctx:
+                ctx.info("Start component reference is empty")
             return {"success": False, "error": "Start component reference cannot be empty"}
         
         try:
-            await ctx.report_progress(10, 100)
-            ctx.info(f"Parsing netlist from: {os.path.basename(schematic_path)}")
-            
+            if ctx:
+                await ctx.report_progress(10, 100)
+                ctx.info(f"Parsing netlist from: {os.path.basename(schematic_path)}")
+                
             parser = NetlistParser(schematic_path)
             parser.export_netlist()
             
-            await ctx.report_progress(40, 100)
-            ctx.info("Structuring netlist data...")
-            
+            if ctx:
+                await ctx.report_progress(40, 100)
+                ctx.info("Structuring netlist data...")
+                
             structured_data = parser.structure_data()
             
             if not structured_data:
-                ctx.info("Failed to structure netlist data")
+                if ctx:
+                    ctx.info("Failed to structure netlist data")
                 return {"success": False, "error": "Failed to structure netlist data"}
             
-            await ctx.report_progress(60, 100)
-            ctx.info("Building circuit graph...")
-            
+            if ctx:
+                await ctx.report_progress(60, 100)
+                ctx.info("Building circuit graph...")
+                
             graph = CircuitGraph(structured_data)
             
-            await ctx.report_progress(80, 100)
-            ctx.info(f"Finding path from neighbors {center_component}...")
-            
+            if ctx:
+                await ctx.report_progress(80, 100)
+                ctx.info(f"Finding path from neighbors {center_component}...")
+                
             path_result = graph.get_neighborhood(center_component, radius)
             
-            await ctx.report_progress(100, 100)
+            if ctx:
+                await ctx.report_progress(100, 100)
             
             if not path_result.get("success"):
-                ctx.info(f"No neighbors found for {center_component}")
+                if ctx:
+                    ctx.info(f"No neighbors found for {center_component}")
                 return {
                     "success": False,
                     "error": f"No neighbors found for {center_component}",
@@ -252,15 +275,17 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": f"File not found: {str(e)}"}
         
         except ValueError as e:
-            ctx.info(f"Invalid data encountered: {str(e)}")
+            if ctx:
+                ctx.info(f"Invalid data encountered: {str(e)}")
             return {"success": False, "error": f"Invalid data: {str(e)}"}
         
         except Exception as e:
-            ctx.info(f"Error finding circuit path: {str(e)}")
+            if ctx:
+                ctx.info(f"Error finding circuit path: {str(e)}")
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
         
     @mcp.tool()
-    async def parse_netlist(schematic_path: str, ctx: Context) -> Dict[str, Any]:
+    async def parse_netlist(schematic_path: str, ctx: Context | None) -> Dict[str, Any]:
         """Parse a KiCad schematic and return a basic netlist summary.
         
         Args:
