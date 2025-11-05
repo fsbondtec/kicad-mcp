@@ -10,7 +10,7 @@ from mcp.server.fastmcp import Context
 
 from kicad_mcp.config import system
 
-async def run_drc_via_cli(pcb_file: str, ctx: Context) -> Dict[str, Any]:
+async def run_drc_via_cli(pcb_file: str, ctx: Context | None) -> Dict[str, Any]:
     """Run DRC using KiCad command line tools.
     
     Args:
@@ -43,8 +43,9 @@ async def run_drc_via_cli(pcb_file: str, ctx: Context) -> Dict[str, Any]:
                 return results
             
             # Report progress 
-            await ctx.report_progress(50, 100)
-            ctx.info("Running DRC using KiCad CLI...")
+            if ctx:
+                await ctx.report_progress(50, 100)
+                ctx.info("Running DRC using KiCad CLI...")
             
             # Build the DRC command
             cmd = [
@@ -84,9 +85,10 @@ async def run_drc_via_cli(pcb_file: str, ctx: Context) -> Dict[str, Any]:
             # Process the DRC report
             violations = drc_report.get("violations", [])
             violation_count = len(violations)
-            #print(f"DRC completed with {violation_count} violations")
-            await ctx.report_progress(70, 100)
-            ctx.info(f"DRC completed with {violation_count} violations")
+            print(f"DRC completed with {violation_count} violations")
+            if ctx:
+                await ctx.report_progress(70, 100)
+                ctx.info(f"DRC completed with {violation_count} violations")
             
             # Categorize violations by type
             error_types = {}
@@ -106,7 +108,8 @@ async def run_drc_via_cli(pcb_file: str, ctx: Context) -> Dict[str, Any]:
                 "violations": violations
             }
             
-            await ctx.report_progress(90, 100)
+            if ctx:
+                await ctx.report_progress(90, 100)
             return results
             
     except Exception as e:

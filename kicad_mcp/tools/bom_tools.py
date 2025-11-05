@@ -27,7 +27,7 @@ def register_bom_tools(mcp: FastMCP) -> None:
     """
     
     @mcp.tool()
-    async def analyze_bom(project_path: str, ctx: Context) -> Dict[str, Any]:
+    async def analyze_bom(project_path: str, ctx: Context | None) -> Dict[str, Any]:
         """Analyze a KiCad project's Bill of Materials.
         
         This tool will look for BOM files related to a KiCad project and provide
@@ -43,13 +43,15 @@ def register_bom_tools(mcp: FastMCP) -> None:
         logging.debug(f"Analyzing BOM for project: {project_path}")
         
         if not os.path.exists(project_path):
-            logging.debug(f"Project not found: {project_path}")
-            ctx.info(f"Project not found: {project_path}")
+            print(f"Project not found: {project_path}")
+            if ctx:
+                ctx.info(f"Project not found: {project_path}")
             return {"success": False, "error": f"Project not found: {project_path}"}
         
         # Report progress
-        await ctx.report_progress(10, 100)
-        ctx.info(f"Looking for BOM files related to {os.path.basename(project_path)}")
+        if ctx:
+            await ctx.report_progress(10, 100)
+            ctx.info(f"Looking for BOM files related to {os.path.basename(project_path)}")
         
         # Get all project files
         files = get_project_files(project_path)
@@ -82,7 +84,8 @@ def register_bom_tools(mcp: FastMCP) -> None:
                 "project_path": project_path
             }
         
-        await ctx.report_progress(30, 100)
+        if ctx:
+            await ctx.report_progress(30, 100)
         
         # Analyze each BOM file
         results = {
@@ -97,7 +100,8 @@ def register_bom_tools(mcp: FastMCP) -> None:
         
         for file_type, file_path in bom_files.items():
             try:
-                ctx.info(f"Analyzing {os.path.basename(file_path)}")
+                if ctx:
+                    ctx.info(f"Analyzing {os.path.basename(file_path)}")
                 
                 # Parse the BOM file
                 bom_data, format_info = parse_bom_file(file_path)
@@ -129,7 +133,8 @@ def register_bom_tools(mcp: FastMCP) -> None:
                     "error": str(e)
                 }
         
-        await ctx.report_progress(70, 100)
+        if ctx:
+            await ctx.report_progress(70, 100)
         
         # Generate overall component summary
         if total_components > 0:
@@ -167,13 +172,14 @@ def register_bom_tools(mcp: FastMCP) -> None:
                 ), "USD")
                 results["component_summary"]["currency"] = currency
         
-        await ctx.report_progress(100, 100)
-        ctx.info(f"BOM analysis complete: found {total_components} components")
+        if ctx:
+            await ctx.report_progress(100, 100)
+            ctx.info(f"BOM analysis complete: found {total_components} components")
         
         return results
     
     @mcp.tool()
-    async def export_bom_csv(project_path: str, ctx: Context) -> Dict[str, Any]:
+    async def export_bom_csv(project_path: str, ctx: Context | None) -> Dict[str, Any]:
         """Export a Bill of Materials for a KiCad project.
         
         This tool attempts to generate a CSV BOM file for a KiCad project.
@@ -189,16 +195,18 @@ def register_bom_tools(mcp: FastMCP) -> None:
         logging.debug(f"Exporting BOM for project: {project_path}")
         
         if not os.path.exists(project_path):
-            logging.debug(f"Project not found: {project_path}")
-            ctx.info(f"Project not found: {project_path}")
+            print(f"Project not found: {project_path}")
+            if ctx:
+                ctx.info(f"Project not found: {project_path}")
             return {"success": False, "error": f"Project not found: {project_path}"}
         
         # Get access to the app context
-        app_context = ctx.request_context.lifespan_context
-        kicad_modules_available = app_context.kicad_modules_available
+        app_context = ctx.request_context.lifespan_context if ctx else None
+        kicad_modules_available = app_context.kicad_modules_available if app_context else False
         
         # Report progress
-        await ctx.report_progress(10, 100)
+        if ctx:
+            await ctx.report_progress(10, 100)
         
         # Get all project files
         files = get_project_files(project_path)
@@ -214,40 +222,52 @@ def register_bom_tools(mcp: FastMCP) -> None:
             schematic_paths = [schematic_paths]
         project_dir = os.path.dirname(project_path)
         project_name = os.path.basename(project_path)[:-10]  # Remove .kicad_pro extension
-
-        await ctx.report_progress(20, 100)
         
+        if ctx:
+            await ctx.report_progress(20, 100)
+
         # Try to export BOM
         # This will depend on KiCad's command-line tools or Python modules
         export_results = []
         for schematic_path in schematic_paths:
             schematic_name = os.path.splitext(os.path.basename(schematic_path))[0]
-            try:
-                ctx.info(f"Exporting BOM for schematic: {schematic_name}")
-                result = await export_bom_with_cli(
-                    schematic_path,
-                    project_dir,
-                    f"{project_name}_{schematic_name}",
-                    ctx
-                )
-                export_results.append(result)
-                
-            except Exception as e:
-                error_msg = f"Error exporting BOM for {schematic_name}: {str(e)}"
-                logging.debug(error_msg, exc_info=True)
-                ctx.info(error_msg)
-                export_results.append({"success": False, "error": str(e), "schematic": schematic_name})
-                
-                await ctx.report_progress(100, 100)
 
+            if kicad_modules_available:
+                try:
+                    # Try to use KiCad Python modules
+                    if ctx:
+                        ctx.info("Attempting to export BOM using KiCad Python modules...")
+                    export_result = await export_bom_with_python(schematic_path, project_dir, project_name, ctx)
+                except Exception as e:
+                    print(f"Error exporting BOM with Python modules: {str(e)}", exc_info=True)
+                    if ctx:
+                        ctx.info(f"Error using Python modules: {str(e)}")
+                    export_result = {"success": False, "error": str(e)}
+        
+            # If Python method failed, try command-line method
+            if not export_result.get("success", False):
+                try:
+                    if ctx:
+                        ctx.info("Attempting to export BOM using command-line tools...")
+                    export_result = await export_bom_with_cli(schematic_path, project_dir, project_name, ctx)
+                except Exception as e:
+                    print(f"Error exporting BOM with CLI: {str(e)}", exc_info=True)
+                    if ctx:
+                        ctx.info(f"Error using command-line tools: {str(e)}")
+                    export_result = {"success": False, "error": str(e)}
+            
+            export_results.append(export_result)
+        
         successful_exports = [res for res in export_results if res.get("success")]
         failed_exports = [res for res in export_results if not res.get("success")]
 
-        for res in successful_exports:
-            ctx.info(f"BOM exported: {res.get('output_file')}")
-
-        for res in failed_exports:
-            ctx.info(f"Failed to export BOM for {res.get('schematic', 'unknown')}: {res.get('error')}")
+   
+        if ctx:
+            await ctx.report_progress(100, 100)
+            for res in successful_exports:
+                ctx.info(f"BOM exported: {res.get('output_file')}")
+            for res in failed_exports:
+                ctx.info(f"Failed to export BOM for {res.get('schematic', 'unknown')}: {res.get('error')}")        
 
         return {
             "success": len(failed_exports) == 0,
@@ -590,7 +610,50 @@ def analyze_bom_data(components: List[Dict[str, Any]], format_info: Dict[str, An
     return results
 
 
-async def export_bom_with_cli(schematic_file: str, output_dir: str, project_name: str, ctx: Context) -> Dict[str, Any]:
+async def export_bom_with_python(schematic_file: str, output_dir: str, project_name: str, ctx: Context | None) -> Dict[str, Any]:
+    """Export a BOM using KiCad Python modules.
+    
+    Args:
+        schematic_file: Path to the schematic file
+        output_dir: Directory to save the BOM
+        project_name: Name of the project
+        ctx: MCP context for progress reporting
+        
+    Returns:
+        Dictionary with export results
+    """
+    print(f"Exporting BOM for schematic: {schematic_file}")
+    if ctx:
+        await ctx.report_progress(30, 100)
+    
+    try:
+        # Try to import KiCad Python modules
+        # This is a placeholder since exporting BOMs from schematic files
+        # is complex and KiCad's API for this is not well-documented
+        import kicad
+        import kicad.pcbnew
+        
+        # For now, return a message indicating this method is not implemented yet
+        print("BOM export with Python modules not fully implemented")
+        if ctx:
+            ctx.info("BOM export with Python modules not fully implemented yet")
+        
+        return {
+            "success": False,
+            "error": "BOM export using Python modules is not fully implemented yet. Try using the command-line method.",
+            "schematic_file": schematic_file
+        }
+    
+    except ImportError:
+        print("Failed to import KiCad Python modules")
+        return {
+            "success": False,
+            "error": "Failed to import KiCad Python modules",
+            "schematic_file": schematic_file
+        }
+
+
+async def export_bom_with_cli(schematic_file: str, output_dir: str, project_name: str, ctx: Context | None) -> Dict[str, Any]:
     """Export a BOM using KiCad command-line tools.
     
     Args:
@@ -606,8 +669,9 @@ async def export_bom_with_cli(schematic_file: str, output_dir: str, project_name
     import platform
     
     system = platform.system()
-    logging.debug(f"Exporting BOM using CLI tools on {system}")
-    await ctx.report_progress(40, 100)
+    print(f"Exporting BOM using CLI tools on {system}")
+    if ctx:
+        await ctx.report_progress(40, 100)
     
     # Output file path
     output_file = os.path.join(output_dir, f"{project_name}_bom.csv")
@@ -682,8 +746,9 @@ async def export_bom_with_cli(schematic_file: str, output_dir: str, project_name
         }
     
     try:
-        logging.debug(f"Running command: {' '.join(cmd)}")
-        await ctx.report_progress(60, 100)
+        print(f"Running command: {' '.join(cmd)}")
+        if ctx:
+            await ctx.report_progress(60, 100)
         
         # Run the command
         process = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -709,7 +774,8 @@ async def export_bom_with_cli(schematic_file: str, output_dir: str, project_name
                 "output_file": output_file
             }
         
-        await ctx.report_progress(80, 100)
+        if ctx:
+            await ctx.report_progress(80, 100)
         
         # Read the first few lines of the BOM to verify it's valid
         with open(output_file, 'r') as f:
