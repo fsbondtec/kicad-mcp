@@ -54,7 +54,7 @@ class NetlistParser:
 
 
     def structure_data(self): 
-        nlst = parse_netlist(self.netlist)       
+        nlst = parse_netlist(self.netlist)     
         for part in nlst.parts:
             component_data = {
                 "lib_id": f"{part.lib}:{part.name}",
@@ -82,7 +82,9 @@ class NetlistParser:
         return {
             "components": self.components,
             "nets": self.nets
+            
         }
+        
     
         
 

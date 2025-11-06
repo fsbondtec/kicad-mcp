@@ -18,7 +18,7 @@ class TestNetlistParser(unittest.TestCase):
         self.parser = NetlistParser(self.test_schematic_path)
         
         # Sample netlist content 
-        with open("tests/test_schematics/sample_netlist.net", "r")as f:
+        with open("tests/test_files/nets/sample_netlist.net", "r")as f:
             self.sample_netlist = f.read()
         
     
@@ -148,7 +148,7 @@ class TestNetlistParser(unittest.TestCase):
       mock_subprocess.return_value = MagicMock(returncode=0, stderr="")
 
       # Sample netlist content 
-      with open("tests/test_schematics/sample_netlist_Integration.net", "r")as f:
+      with open("tests/test_files/nets/sample_netlist_Integration.net", "r")as f:
         sample_netlist = f.read()
               
       with patch('os.path.exists', return_value=True):

@@ -23,8 +23,7 @@ class TestCircuitGraph:
         assert len(graph.adjacency_list['C1']) == 0
 
     def test_building_Graph(self):
-        """Test building the graph with nets and components
-        """
+        """Test building the graph with nets and components"""
 
         netlist_data = {
             'components': {

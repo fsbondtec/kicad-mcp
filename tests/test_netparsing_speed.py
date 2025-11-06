@@ -5,13 +5,15 @@ import pytest
 
 from kicad_mcp.utils.net_parser import NetlistParser
 
+test_schematic = "tests/test_files/schematics/glasgow.kicad_sch"
+
 class TestNetlistPerformance(unittest.TestCase):
     """Performance test for netlist parsing"""
     
     @classmethod
-    def setUpClass(self):
+    def setUpClass(cls):
         """Set up test fixtures once for all tests workflow""" 
-        self.test_schematic = "tests/test_schematics/schematics/glasgow.kicad_sch"
+        cls.test_schematic = test_schematic
         
     def test_full_workflow(self):
         if not os.path.exists(self.test_schematic):
@@ -40,4 +42,23 @@ class TestNetlistPerformance(unittest.TestCase):
         self.assertLess(total_time, 4.0)
         self.assertGreater(len(result["components"]), 0, "Should parse components")
     
+@pytest.fixture
+def sample_schematic():
+    return test_schematic
+
+
+def test_full_workflow_benchmark(benchmark, sample_schematic):    
+    if not os.path.exists(sample_schematic):
+        pytest.skip(f"Schematic file not found: {sample_schematic}")
     
+    def workflow():
+        parser = NetlistParser(sample_schematic)
+        parser.export_netlist()
+        result = parser.structure_data()
+        return result
+    
+    result = benchmark(workflow)
+    
+    assert len(result["components"]) > 0, "Should parse components"
+    assert len(result["nets"]) > 0, "Should parse nets"
+        
