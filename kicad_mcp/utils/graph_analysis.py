@@ -18,7 +18,7 @@ GLOBAL_KICAD_POWER_SYMBOLS = [
 ]
 
 class CircuitGraph:
-    def __init__(self, netlist_data: Dict[str, Any], abstraction_level):
+    def __init__(self, netlist_data: Dict[str, Any]):
         """Initialisiere Graph aus KiCad-Netlist-Daten
         
         Args:
@@ -28,16 +28,20 @@ class CircuitGraph:
         self.edges = {}
         self.adjacency_list = defaultdict(set)
         self.netlist_data = netlist_data
-        self.abstraction_level = abstraction_level
 
         self._build_graph()
     
-    def find_path(self, start: str, end: str, ignore_Power: bool, max_depth: int = 10) -> List[str]:
+    def find_path(self, start: str, end: str, max_depth: int = 10, abstraction_level: str = "medium") -> List[str]:
         """Find shortest Path between two components
         
         Returns:
             List of component references forming the path
         """
+
+        ignore_Power = False
+
+        if abstraction_level == "low":
+            ignore_Power = True    
 
         if start not in self.adjacency_list or end not in self.adjacency_list:
             return None

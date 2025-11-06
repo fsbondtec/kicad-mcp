@@ -128,7 +128,7 @@ class TestFindPath:
             }
         }
                 
-    
+    #TODO: change tests for abstraction level
     def test_path_to_self_component(self, simple_chain_netlist):
         """Test path from component to itself"""
 

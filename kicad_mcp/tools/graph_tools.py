@@ -145,13 +145,13 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 await ctx.report_progress(60, 100)
                 ctx.info("Building circuit graph...")
             
-            graph = CircuitGraph(structured_data, abstraction_level)
+            graph = CircuitGraph(structured_data)
             
             if ctx:
                 await ctx.report_progress(80, 100)
                 ctx.info(f"Finding path from {start_component} to {end_component}...")
                 
-            path_result = graph.find_path(start_component, end_component,  max_depth)
+            path_result = graph.find_path(start_component, end_component,  max_depth, abstraction_level)
             
             if ctx:
                 await ctx.report_progress(100, 100)
