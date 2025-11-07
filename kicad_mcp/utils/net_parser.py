@@ -74,7 +74,8 @@ class NetlistParser:
             for pin in net.pins:
                 net_pins.append({
                     "component": pin.ref,
-                    "pin": pin.num
+                    "pin": pin.num,
+                    "electrical_type": pin.type
                 })
             
             self.nets[net.name] = net_pins
@@ -82,7 +83,6 @@ class NetlistParser:
         return {
             "components": self.components,
             "nets": self.nets
-            
         }
         
     

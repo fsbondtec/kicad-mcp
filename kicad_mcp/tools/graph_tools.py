@@ -192,7 +192,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
         except Exception as e:
             if ctx:
                 ctx.info(f"Error finding circuit path: {str(e)}")
-            return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
+            return {"success": False, "error": f"Error finding circuit path: {str(e)}, {graph.adjacency_list}"}
         
     @mcp.tool()
     async def analyze_functional_block(schematic_path: str, center_component: str,  ctx: Context | None,

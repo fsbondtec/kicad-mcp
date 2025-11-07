@@ -44,7 +44,12 @@ class CircuitGraph:
             ignore_Power = True    
 
         if start not in self.adjacency_list or end not in self.adjacency_list:
-            return None
+            return {
+                "success": False,
+                "path": None,
+                "path_length": 0,
+                "component_details": []
+            }
     
         if start == end:
             if self.nodes[start]["type"] == "component":
@@ -59,53 +64,58 @@ class CircuitGraph:
             "component_details": [self.nodes[start]] if self.nodes[start]["type"] == "component" else []
             }
             
-        
-        queue = deque([(start, [start])])
+        queue = deque([(start, [start], 0)]) #first Node, Path, component_count
         visited = {start}
-        
+    
         while queue:
-            current, path = queue.popleft()
+            current, path, comp_count = queue.popleft()
+
+            #if path is longer then max_depth then skip path
+            if comp_count >= max_depth:
+                continue
             
+    
             for neighbor in self.adjacency_list[current]:
                 if neighbor in visited:
                     continue
                 
-                if ignore_Power and self.nodes[neighbor]["type"] == "net":
-                    if neighbor in [p for p in GLOBAL_KICAD_POWER_SYMBOLS]:
-                        continue
+                #if abstraction level is low ignore everything but signal connections
+                if ignore_Power:
+                    #first check: is net a known kicad Power Symbol
+                    if self.nodes[neighbor]["type"] == "net":
+                        if neighbor in GLOBAL_KICAD_POWER_SYMBOLS:
+                            continue
+
+                    #second check: are the components only connected over power pins?
+                    #TODO: implement edge check
+
+                
+                #calculate new component count
+                new_comp_count = comp_count
+                if self.nodes[neighbor]["type"] == "component":
+                    new_comp_count = new_comp_count + 1
+
 
                 new_path = path + [neighbor]
                 
                 if neighbor == end:
 
-                    component_details = []
-                    limited_path = []
-                    component_count = 0
-                    for node in new_path:
-                        limited_path.append(node)
+                    component_details = [
+                    {"ref": node, **self.nodes[node]} 
+                    for node in new_path 
+                    if self.nodes[node]["type"] == "component"
+                    ]
 
-                        if self.nodes[node]["type"] == "component":
-                            component_count += 1
-                            component_details.append({"ref": node, **self.nodes[node]})
-
-
-                            if(component_count >= max_depth):
-                                return {
-                                    "success": True,
-                                    "path": limited_path,
-                                    "path_length": component_count,
-                                    "component_details": component_details
-                                }
-
+                            
                     return {
                         "success": True,
                         "path": new_path,
-                        "path_length": component_count,
-                        "component_details": component_details
+                        "path_length": new_comp_count,
+                        "component_details": component_details,
                     }
-                
+
                 visited.add(neighbor)
-                queue.append((neighbor, new_path))
+                queue.append((neighbor, new_path, new_comp_count))
 
         return {
             "success": False,
