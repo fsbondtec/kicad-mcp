@@ -40,7 +40,7 @@ class CircuitGraph:
 
         ignore_Power = False
 
-        if abstraction_level == "low":
+        if abstraction_level == "high":
             ignore_Power = True    
 
         if start not in self.adjacency_list or end not in self.adjacency_list:
