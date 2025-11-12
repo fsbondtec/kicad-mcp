@@ -83,11 +83,12 @@ class CircuitGraph:
                 if ignore_Power:
                     #first check: is net a known kicad Power Symbol
                     if self.nodes[neighbor]["type"] == "net":
-                        if neighbor in GLOBAL_KICAD_POWER_SYMBOLS:
+                        if self.is_power_net(neighbor):
                             continue
 
                     #second check: are the components only connected over power pins?
-                    #TODO: implement edge check
+                    if self.is_power_edge(current, neighbor):
+                        continue
 
                 
                 #calculate new component count
@@ -189,10 +190,6 @@ class CircuitGraph:
         }
 
     
-    def classify_component_type(self, component_ref: str) -> str:
-        """classify Component Type (compatible with existing System)"""
-        pass
-
     def _build_graph(self):
 
         for ref, attrs in self.netlist_data['components'].items():
@@ -268,5 +265,39 @@ class CircuitGraph:
             if electrical_type in ["power_in", "power_out"]:
                 return True  
         
+        return False
+    
+    def is_power_net(self, net_name: str) -> bool:
+        """
+        Check if a net is a power net
+        
+        Args:
+            net_name: Name of the net to check
+            
+        Returns:
+            True if the net is likely a power/ground net
+        """
+        #case insensitive
+        net_upper = net_name.upper()
+        
+        #1. check if name of Net is standard Kicad Power Symbol
+        if net_name in GLOBAL_KICAD_POWER_SYMBOLS:
+            return True
+        
+        # patterns that indicate Power net 
+        power_patterns = [
+            'VCC', 'VDD', 'VEE', 'VSS', 'VDDA', 'VSSA',
+            'GND', 'GNDA', 'GNDD', 'GNDPWR',
+            '+3V3', '+5V', '+12V', '+24V', '+48V',
+            '-5V', '-12V', '-24V',
+            'VBUS', 'VBAT', 'VIN', 'VOUT',
+            'PWR', 'POWER'
+        ]
+        
+        # Check if any pattern is contained in the net name
+        for pattern in power_patterns:
+            if pattern in net_upper:
+                return True
+            
         return False
 
