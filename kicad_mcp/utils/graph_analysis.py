@@ -151,8 +151,14 @@ class CircuitGraph:
                     continue
 
 
+                #if abstraction level is low ignore everything but signal connections
                 if ingore_Power and  self.nodes[neighbor]["type"] == "net":
+                    #first check: is net a known kicad Power Symbol
                     if neighbor in GLOBAL_KICAD_POWER_SYMBOLS:
+                        continue
+
+                    #second check: are the components only connected over power pins?
+                    if self.is_power_edge(currentNode, neighbor):
                         continue
 
                 visited.add(neighbor)
@@ -209,4 +215,58 @@ class CircuitGraph:
                     self.edges[edge_key] = {"pins": []}
                 
                 self.edges[edge_key]["pins"].append(pin_num)
+
+    def get_pin_electrical_type(self, component_ref: str, pin_num: str, net_name: str) -> str:
+        """Get electrical type of a specific pin from netlist data
+        
+        Args:
+            component_ref: Component reference (e.g., "U2")
+            pin_num: Pin number (e.g., "7")
+            net_name: Net name (e.g., "+12V")
+            
+        Returns:
+            Electrical type string (e.g., "power_out", "input", "passive")
+        """
+        
+        # Get all components that are connected to this net
+        net_connections = self.netlist_data['nets'].get(net_name, [])
+        
+        # Find the specific pin
+        for conn in net_connections:
+            if conn['component'] == component_ref and conn['pin'] == pin_num:
+                return conn.get('electrical_type')
+        
+        return 'unspecified'
+    
+    def is_power_edge(self, from_node: str, to_node: str) -> bool:
+        """Check if edge uses power_in or power_out pins
+        
+        Looks up the electrical types from netlist data for pins on this edge.
+        """
+        
+        #get the pin nums of the edges
+        edge_key = (from_node, to_node)
+        edge_data = self.edges.get(edge_key)
+        
+        if not edge_data:
+            return False
+                
+        if self.nodes[from_node]["type"] == "component" and not self.nodes[to_node]["type"] == "component":
+            # Component to Net
+            component_ref = from_node
+            net_name = to_node
+        elif not self.nodes[from_node]["type"] == "component" and self.nodes[to_node]["type"] == "component":
+            # Net to Component
+            component_ref = to_node
+            net_name = from_node
+        
+        #check the electrical type of connection between specified net and component
+        for pin_num in edge_data.get("pins", []):
+            electrical_type = self.get_pin_electrical_type(component_ref, pin_num, net_name)
+            
+            #if pin of type "power_in" or "power_out" block the path
+            if electrical_type in ["power_in", "power_out"]:
+                return True  
+        
+        return False
 
