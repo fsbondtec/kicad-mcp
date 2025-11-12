@@ -88,7 +88,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def get_circuit_path(schematic_path: str, start_component: str, 
-                            end_component: str, max_depth: int, ctx: Context | None, abstraction_level = "medium") -> Dict:
+                            end_component: str, max_depth: int, ctx: Context | None, ignore_power = True) -> Dict:
         """Find the shortest path between two components in a circuit.
     
         This tool analyzes the circuit netlist and finds the connection path
@@ -151,7 +151,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 await ctx.report_progress(80, 100)
                 ctx.info(f"Finding path from {start_component} to {end_component}...")
                 
-            path_result = graph.find_path(start_component, end_component,  max_depth, abstraction_level)
+            path_result = graph.find_path(start_component, end_component,  max_depth, ignore_power)
             
             if ctx:
                 await ctx.report_progress(100, 100)
@@ -174,7 +174,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 "schematic_path": schematic_path,
                 "start_component": start_component,
                 "end_component": end_component,
-                "abstraction_level": abstraction_level,
                 "max_depth": max_depth,
                 **path_result  
             }
@@ -196,7 +195,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
         
     @mcp.tool()
     async def analyze_functional_block(schematic_path: str, center_component: str,  ctx: Context | None,
-                                    radius: int = 2) -> Dict:
+                                    radius: int = 2, ignore_power = True) -> Dict:
         
         """
         Analyze the functional block around a given component in a schematic.
@@ -246,7 +245,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 await ctx.report_progress(80, 100)
                 ctx.info(f"Finding path from neighbors {center_component}...")
                 
-            path_result = graph.get_neighborhood(center_component, radius)
+            path_result = graph.get_neighborhood(center_component, radius, ignore_power)
             
             if ctx:
                 await ctx.report_progress(100, 100)
@@ -271,7 +270,8 @@ def register_graph_tools(mcp: FastMCP) -> None:
             }
             
         except FileNotFoundError as e:
-            ctx.info(f"File not found: {str(e)}")
+            if ctx:
+                ctx.info(f"File not found: {str(e)}")
             return {"success": False, "error": f"File not found: {str(e)}"}
         
         except ValueError as e:

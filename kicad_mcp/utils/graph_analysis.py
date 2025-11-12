@@ -31,17 +31,12 @@ class CircuitGraph:
 
         self._build_graph()
     
-    def find_path(self, start: str, end: str, max_depth: int = 10, abstraction_level: str = "medium") -> List[str]:
+    def find_path(self, start: str, end: str, max_depth: int = 10, ignore_power = True) -> List[str]:
         """Find shortest Path between two components
         
         Returns:
             List of component references forming the path
-        """
-
-        ignore_Power = False
-
-        if abstraction_level == "high":
-            ignore_Power = True    
+        """  
 
         if start not in self.adjacency_list or end not in self.adjacency_list:
             return {
@@ -80,7 +75,7 @@ class CircuitGraph:
                     continue
                 
                 #if abstraction level is low ignore everything but signal connections
-                if ignore_Power:
+                if ignore_power:
                     #first check: is net a known kicad Power Symbol
                     if self.nodes[neighbor]["type"] == "net":
                         if self.is_power_net(neighbor):
@@ -126,7 +121,7 @@ class CircuitGraph:
         } #no path
 
 
-    def get_neighborhood(self, component: str, ingore_Power: bool, radius: int = 2) -> Dict[str, Any]:
+    def get_neighborhood(self, component: str, radius: int = 2, ingore_Power: bool = True) -> Dict[str, Any]:
         """Find componoents in a given distance (for Functional Block Analysis)"""
 
         if component not in self.adjacency_list:
@@ -189,7 +184,6 @@ class CircuitGraph:
             "details": details
         }
 
-    
     def _build_graph(self):
 
         for ref, attrs in self.netlist_data['components'].items():
