@@ -234,14 +234,7 @@ class CircuitGraph:
         
         Looks up the electrical types from netlist data for pins on this edge.
         """
-        
-        #get the pin nums of the edges
-        edge_key = (from_node, to_node)
-        edge_data = self.edges.get(edge_key)
-        
-        if not edge_data:
-            return False
-                
+        #check what is component and what is net so the edge will always be found if it exists
         if self.nodes[from_node]["type"] == "component" and not self.nodes[to_node]["type"] == "component":
             # Component to Net
             component_ref = from_node
@@ -251,6 +244,13 @@ class CircuitGraph:
             component_ref = to_node
             net_name = from_node
         
+        #get the pin nums of the edges
+        edge_key = (component_ref, net_name)
+        edge_data = self.edges.get(edge_key)
+        
+        if not edge_data:
+            return False
+                
         #check the electrical type of connection between specified net and component
         for pin_num in edge_data.get("pins", []):
             electrical_type = self.get_pin_electrical_type(component_ref, pin_num, net_name)
