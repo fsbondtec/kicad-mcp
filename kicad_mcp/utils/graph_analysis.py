@@ -1,37 +1,35 @@
+import os
 from collections import defaultdict, deque
 from typing import Any, Dict, List
+from kiutils.schematic import Schematic
 
-GLOBAL_KICAD_POWER_SYMBOLS = [
-    '+10V', '+12C', '+12L', '+12LF', '+12P', '+12V', '+12VA', '+15V',
-    '+1V0', '+1V1', '+1V2', '+1V35', '+1V5', '+1V8', '+24V', '+28V',
-    '+2V5', '+2V8', '+3.3V', '+3.3VA', '+3.3VADC', '+3.3VDAC', '+3.3VP',
-    '+36V', '+3V0', '+3V3', '+3V8', '+48V', '+4V', '+5C', '+5F', '+5P',
-    '+5V', '+5VA', '+5VD', '+5VL', '+5VP', '+6V', '+7.5V', '+8V', '+9V',
-    '+9VA', '+BATT', '+VDC', '+VSW', '-10V', '-12V', '-12VA', '-15V',
-    '-24V', '-2V5', '-36V', '-3V3', '-48V', '-5V', '-5VA', '-6V', '-8V',
-    '-9V', '-9VA', '-BATT', '-VDC', '-VSW', 'AC', 'Earth', 'Earth_Clean',
-    'Earth_Protective', 'GND', 'GND1', 'GND2', 'GND3', 'GNDA', 'GNDD',
-    'GNDPWR', 'GNDREF', 'GNDS', 'HT', 'LINE', 'NEUT', 'PRI_HI', 'PRI_LO',
-    'PRI_MID', 'PWR_FLAG', 'VAA', 'VAC', 'VBUS', 'VCC', 'VCCQ', 'VCOM',
-    'VD', 'VDC', 'VDD', 'VDDA', 'VDDF', 'Vdrive', 'VEE', 'VMEM', 'VPP',
-    'VS', 'VSS', 'VSSA'
-]
+from kicad_mcp.utils.file_utils import get_project_files
 
 class CircuitGraph:
-    def __init__(self, netlist_data: Dict[str, Any]):
+    def __init__(self, netlist_data: Dict[str, Any], project_path: str | None):
         """Initialisiere Graph aus KiCad-Netlist-Daten
         
         Args:
             netlist_data: Parsed netlist from our existing parser
         """
+        self.project_path = project_path
         self.nodes = {}
         self.edges = {}
         self.adjacency_list = defaultdict(set)
         self.netlist_data = netlist_data
+        self.power_symbols = None
+        self.load_powerSymbols()
 
         self._build_graph()
+
+    def load_powerSymbols(self):
+        """loads Power Symbols once for the whole class"""
+        if self.project_path and self.power_symbols is None:
+            self.power_symbols = self.get_powerSymbols(self.project_path)
+        else:
+            self.power_symbols = set()
     
-    def find_path(self, start: str, end: str, max_depth: int = 10, ignore_power = True) -> List[str]:
+    def find_path(self, start: str, end: str, max_depth: int = 10, ignore_power = True, project_path: str | None = None) -> List[str]:
         """Find shortest Path between two components
         
         Returns:
@@ -75,12 +73,12 @@ class CircuitGraph:
                     continue
                 
                 #if abstraction level is low ignore everything but signal connections
-                if ignore_power:
+                if ignore_power and project_path:
                     #first check: is net a known kicad Power Symbol
                     if self.nodes[neighbor]["type"] == "net":
-                        if self.is_power_net(neighbor):
+                        if neighbor in self.power_symbols:
                             continue
-
+                    
                     #second check: are the components only connected over power pins?
                     if self.is_power_edge(current, neighbor):
                         continue
@@ -136,6 +134,7 @@ class CircuitGraph:
         visited = {component}
         allNeighbors = []
 
+
         while queue:
             currentNode, currentDepth = queue.popleft()
 
@@ -148,9 +147,9 @@ class CircuitGraph:
 
 
                 #if abstraction level is low ignore everything but signal connections
-                if ingore_Power and  self.nodes[neighbor]["type"] == "net":
+                if ingore_Power and self.nodes[neighbor]["type"] == "net" and self.project_path:
                     #first check: is net a known kicad Power Symbol
-                    if neighbor in GLOBAL_KICAD_POWER_SYMBOLS:
+                    if neighbor in self.power_symbols:
                         continue
 
                     #second check: are the components only connected over power pins?
@@ -166,7 +165,7 @@ class CircuitGraph:
                     queue.append((neighbor, currentDepth))
 
                 #whenever Node is a component it is added to the neighbors, nets are only added if the ignore_Power flag is false
-                if (self.nodes[neighbor]["type"] == "component") or (not ingore_Power and neighbor in GLOBAL_KICAD_POWER_SYMBOLS):
+                if (self.nodes[neighbor]["type"] == "component") or (not ingore_Power and neighbor in self.power_symbols):
                     allNeighbors.append(neighbor)
 
 
@@ -260,38 +259,63 @@ class CircuitGraph:
                 return True  
         
         return False
-    
-    def is_power_net(self, net_name: str) -> bool:
+
+
+    def get_powerSymbols(self):
         """
-        Check if a net is a power net
-        
+        Read all power Symbols and their name from the schematic File,
+        to identify power paths better for abstraction
+
         Args:
-            net_name: Name of the net to check
+            project_path: path to the project (.kicad_pro file)
             
         Returns:
-            True if the net is likely a power/ground net
+            List of power Symbol names
         """
-        #case insensitive
-        net_upper = net_name.upper()
-        
-        #1. check if name of Net is standard Kicad Power Symbol
-        if net_name in GLOBAL_KICAD_POWER_SYMBOLS:
-            return True
-        
-        # patterns that indicate Power net 
-        power_patterns = [
-            'VCC', 'VDD', 'VEE', 'VSS', 'VDDA', 'VSSA',
-            'GND', 'GNDA', 'GNDD', 'GNDPWR',
-            '+3V3', '+5V', '+12V', '+24V', '+48V',
-            '-5V', '-12V', '-24V',
-            'VBUS', 'VBAT', 'VIN', 'VOUT',
-            'PWR', 'POWER'
-        ]
-        
-        # Check if any pattern is contained in the net name
-        for pattern in power_patterns:
-            if pattern in net_upper:
-                return True
-            
-        return False
 
+        #get all Files from Project
+        files = get_project_files(self.project_path)
+
+        if "schematic" not in files:
+            return set()
+        
+        #when hierarchical sheets more then one schematic File 
+        schematic_paths = files["schematic"]
+
+        if isinstance(schematic_paths, str):
+            schematic_paths = [schematic_paths]
+
+        power_symbols = set()
+
+        # get symbols from all schematic sheets 
+        for sch_path in schematic_paths:
+        
+            sch = Schematic.from_file(sch_path)
+            
+            for inst in sch.schematicSymbols:
+                # only get Symbols from power Library
+
+                if inst.libId is not None and inst.libId.startswith("power:"):
+                    entry = inst.entryName  
+                    
+                    #get libsymbol with an iterator
+                    libsym = next((ls for ls in sch.libSymbols if ls.entryName == entry), None)
+                    
+                    if libsym is not None:
+                        # Parent Value from libSymbol
+                        for prop in libsym.properties:
+                            if prop.key == "Value":
+                                parent_value = prop.value
+                        
+                        # Child Value from the instance
+                        for prop in inst.properties:
+                            if prop.key == "Value":
+                                child_value = prop.value
+                        
+                        final_value = child_value if child_value is not None else parent_value
+                        
+                        if final_value:
+                            power_symbols.add(final_value)
+        
+        return power_symbols
+    

@@ -17,7 +17,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
     
 
     @mcp.tool()
-    async def get_netGraph(schematic_path: str, ctx: Context | None):
+    async def get_netGraph(project_path: str, schematic_path: str, ctx: Context | None):
         """Get the complete network graph of a KiCad schematic.
         
         Args:
@@ -50,7 +50,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             parser = NetlistParser(schematic_path)
             parser.export_netlist()            
             structured_data = parser.structure_data()
-            graph = CircuitGraph(structured_data)
+            graph = CircuitGraph(structured_data, project_path)
             
             if not graph.nodes:
                 return {
@@ -87,7 +87,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
 
     @mcp.tool()
-    async def get_circuit_path(schematic_path: str, start_component: str, 
+    async def get_circuit_path(project_path: str, schematic_path: str, start_component: str, 
                             end_component: str, max_depth: int, ctx: Context | None, ignore_power = True) -> Dict:
         """Find the shortest path between two components in a circuit.
     
@@ -145,13 +145,13 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 await ctx.report_progress(60, 100)
                 ctx.info("Building circuit graph...")
             
-            graph = CircuitGraph(structured_data)
+            graph = CircuitGraph(structured_data, project_path)
             
             if ctx:
                 await ctx.report_progress(80, 100)
                 ctx.info(f"Finding path from {start_component} to {end_component}...")
                 
-            path_result = graph.find_path(start_component, end_component,  max_depth, ignore_power)
+            path_result = graph.find_path(start_component, end_component,  max_depth, ignore_power, project_path)
             
             if ctx:
                 await ctx.report_progress(100, 100)
@@ -194,7 +194,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": f"Error finding circuit path: {str(e)}, {graph.adjacency_list}"}
         
     @mcp.tool()
-    async def analyze_functional_block(schematic_path: str, center_component: str,  ctx: Context | None,
+    async def analyze_functional_block(project_path: str, schematic_path: str, center_component: str,  ctx: Context | None,
                                     radius: int = 2, ignore_power = True) -> Dict:
         
         """
@@ -239,7 +239,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 await ctx.report_progress(60, 100)
                 ctx.info("Building circuit graph...")
                 
-            graph = CircuitGraph(structured_data)
+            graph = CircuitGraph(structured_data, project_path)
             
             if ctx:
                 await ctx.report_progress(80, 100)

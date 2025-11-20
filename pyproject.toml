@@ -49,6 +49,8 @@ dependencies = [
     "defusedxml>=0.7.0",  # Secure XML parsing
     "PyPDF2>=3.0.1",
     "sexpdata>=1.0.2",
+    "kinparse>=1.2.4",
+    "kiutils>=1.4.8"
 ]
 
 [project.urls]
