@@ -4,9 +4,60 @@ Netlist extraction, graph creation anf analysis of project
 import os
 from typing import Dict, Any
 from mcp.server.fastmcp import FastMCP, Context
+import hashlib
 
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
+
+# Cache for storing netlist and graph
+project_cache: Dict[str, Dict[str, Any]] = {}
+
+def get_data(project_path: str, schematic_path: str) -> tuple[CircuitGraph, Dict]:
+    """Get cached graph or create new one if not exists.
+    
+    Args:
+        project_path: Path to the project
+        schematic_path: Path to the schematic file
+        
+    Returns:
+        Tuple of (CircuitGraph, structured_data)
+    """
+    cache_key = f"{project_path}:{schematic_path}"
+    
+    # Check if cache and file hasn't been modified
+    if cache_key in project_cache:
+        cached = project_cache[cache_key]  
+        current_hash = hash_file(schematic_path)
+      
+
+        if cached['hash'] == current_hash:
+            return cached['graph'], cached['structured_data']
+    else:
+        current_hash = None
+    
+    # Parse and create new graph
+    parser = NetlistParser(schematic_path)
+    parser.export_netlist()
+    structured_data = parser.structure_data()
+    graph = CircuitGraph(structured_data, project_path)
+
+    if current_hash is None:
+        current_hash = hash_file(schematic_path)
+    
+    # Cache the results
+    project_cache[cache_key] = {
+        'graph': graph,
+        'structured_data': structured_data,
+        'hash': current_hash
+    }
+    
+    return graph, structured_data
+
+def hash_file(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+        
+
 
 def register_graph_tools(mcp: FastMCP) -> None:
     """Register graph-related tools with the MCP server.
@@ -15,7 +66,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
         mcp: The FastMCP server instance
     """
     
-
     @mcp.tool()
     async def get_netGraph(project_path: str, schematic_path: str, ctx: Context | None):
         """Get the complete network graph of a KiCad schematic.
@@ -46,12 +96,8 @@ def register_graph_tools(mcp: FastMCP) -> None:
                     "error": f"Schematic file not found: {schematic_path}"
                 }
             
-
-            parser = NetlistParser(schematic_path)
-            parser.export_netlist()            
-            structured_data = parser.structure_data()
-            graph = CircuitGraph(structured_data, project_path)
-            
+            graph, _ = get_data(project_path, schematic_path)
+    
             if not graph.nodes:
                 return {
                     "success": False,
@@ -88,7 +134,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def get_circuit_path(project_path: str, schematic_path: str, start_component: str, 
-                            end_component: str, max_depth: int, ctx: Context | None, ignore_power = True) -> Dict:
+                            end_component: str, max_depth: int, ignore_power:bool, ctx: Context | None) -> Dict:
         """Find the shortest path between two components in a circuit.
     
         This tool analyzes the circuit netlist and finds the connection path
@@ -123,35 +169,14 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": "End component reference cannot be empty"}
         
         try:
-            if ctx:
-                await ctx.report_progress(10, 100)
-                ctx.info(f"Parsing netlist from: {os.path.basename(schematic_path)}")
                 
-            parser = NetlistParser(schematic_path)
-            parser.export_netlist()
-            
-            if ctx:
-                await ctx.report_progress(40, 100)
-                ctx.info("Structuring netlist data...")
-            
-            structured_data = parser.structure_data()
-            
-            if not structured_data:
-                if ctx:
-                    ctx.info("Failed to structure netlist data")
-                return {"success": False, "error": "Failed to structure netlist data"}
-            
-            if ctx:
-                await ctx.report_progress(60, 100)
-                ctx.info("Building circuit graph...")
-            
-            graph = CircuitGraph(structured_data, project_path)
+            graph, _ = get_data(project_path, schematic_path)
             
             if ctx:
                 await ctx.report_progress(80, 100)
                 ctx.info(f"Finding path from {start_component} to {end_component}...")
                 
-            path_result = graph.find_path(start_component, end_component,  max_depth, ignore_power, project_path)
+            path_result = graph.find_path(start_component, end_component, ignore_power, max_depth)
             
             if ctx:
                 await ctx.report_progress(100, 100)
@@ -191,11 +216,11 @@ def register_graph_tools(mcp: FastMCP) -> None:
         except Exception as e:
             if ctx:
                 ctx.info(f"Error finding circuit path: {str(e)}")
-            return {"success": False, "error": f"Error finding circuit path: {str(e)}, {graph.adjacency_list}"}
+            return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
         
     @mcp.tool()
-    async def analyze_functional_block(project_path: str, schematic_path: str, center_component: str,  ctx: Context | None,
-                                    radius: int = 2, ignore_power = True) -> Dict:
+    async def analyze_functional_block(project_path: str, schematic_path: str, center_component: str, ignore_power:bool,  ctx: Context | None,
+                                    radius: int = 2) -> Dict:
         
         """
         Analyze the functional block around a given component in a schematic.
@@ -217,35 +242,14 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": "Start component reference cannot be empty"}
         
         try:
-            if ctx:
-                await ctx.report_progress(10, 100)
-                ctx.info(f"Parsing netlist from: {os.path.basename(schematic_path)}")
                 
-            parser = NetlistParser(schematic_path)
-            parser.export_netlist()
-            
-            if ctx:
-                await ctx.report_progress(40, 100)
-                ctx.info("Structuring netlist data...")
-                
-            structured_data = parser.structure_data()
-            
-            if not structured_data:
-                if ctx:
-                    ctx.info("Failed to structure netlist data")
-                return {"success": False, "error": "Failed to structure netlist data"}
-            
-            if ctx:
-                await ctx.report_progress(60, 100)
-                ctx.info("Building circuit graph...")
-                
-            graph = CircuitGraph(structured_data, project_path)
+            graph, _ = get_data(project_path, schematic_path)
             
             if ctx:
                 await ctx.report_progress(80, 100)
                 ctx.info(f"Finding path from neighbors {center_component}...")
                 
-            path_result = graph.get_neighborhood(center_component, radius, ignore_power)
+            path_result = graph.get_neighborhood(center_component, ignore_power, radius)
             
             if ctx:
                 await ctx.report_progress(100, 100)

@@ -25,11 +25,11 @@ class CircuitGraph:
     def load_powerSymbols(self):
         """loads Power Symbols once for the whole class"""
         if self.project_path and self.power_symbols is None:
-            self.power_symbols = self.get_powerSymbols(self.project_path)
+            self.power_symbols = self.get_powerSymbols()
         else:
             self.power_symbols = set()
     
-    def find_path(self, start: str, end: str, max_depth: int = 10, ignore_power = True, project_path: str | None = None) -> List[str]:
+    def find_path(self, start: str, end: str, ignore_power:bool, max_depth: int = 10) -> List[str]:
         """Find shortest Path between two components
         
         Returns:
@@ -73,7 +73,7 @@ class CircuitGraph:
                     continue
                 
                 #if abstraction level is low ignore everything but signal connections
-                if ignore_power and project_path:
+                if ignore_power:
                     #first check: is net a known kicad Power Symbol
                     if self.nodes[neighbor]["type"] == "net":
                         if neighbor in self.power_symbols:
@@ -119,7 +119,7 @@ class CircuitGraph:
         } #no path
 
 
-    def get_neighborhood(self, component: str, radius: int = 2, ingore_Power: bool = True) -> Dict[str, Any]:
+    def get_neighborhood(self, component: str, ignore_Power: bool, radius: int = 2) -> Dict[str, Any]:
         """Find componoents in a given distance (for Functional Block Analysis)"""
 
         if component not in self.adjacency_list:
@@ -147,10 +147,11 @@ class CircuitGraph:
 
 
                 #if abstraction level is low ignore everything but signal connections
-                if ingore_Power and self.nodes[neighbor]["type"] == "net" and self.project_path:
+                if ignore_Power:
+                    if self.nodes[neighbor]["type"] == "net":
                     #first check: is net a known kicad Power Symbol
-                    if neighbor in self.power_symbols:
-                        continue
+                        if neighbor in self.power_symbols:
+                            continue
 
                     #second check: are the components only connected over power pins?
                     if self.is_power_edge(currentNode, neighbor):
@@ -165,7 +166,7 @@ class CircuitGraph:
                     queue.append((neighbor, currentDepth))
 
                 #whenever Node is a component it is added to the neighbors, nets are only added if the ignore_Power flag is false
-                if (self.nodes[neighbor]["type"] == "component") or (not ingore_Power and neighbor in self.power_symbols):
+                if (self.nodes[neighbor]["type"] == "component") or (not ignore_Power and neighbor in self.power_symbols):
                     allNeighbors.append(neighbor)
 
 
