@@ -41,7 +41,7 @@ class CircuitGraph:
                 "success": False,
                 "path": None,
                 "path_length": 0,
-                "component_details": []
+                #"component_details": []
             }
     
         if start == end:
@@ -115,11 +115,11 @@ class CircuitGraph:
             "success": False,
             "path": None,
             "path_length": 0,
-            "component_details": []
+            #"component_details": []
         } #no path
 
 
-    def get_neighborhood(self, component: str, ignore_Power: bool, radius: int = 2) -> Dict[str, Any]:
+    def get_neighborhood(self, component: str, ignore_Power: bool, radius: int) -> Dict[str, Any]:
         """Find componoents in a given distance (for Functional Block Analysis)"""
 
         if component not in self.adjacency_list:
@@ -127,12 +127,13 @@ class CircuitGraph:
                 "success": False,
                 "start": component,
                 "neighborhood": [],
-                "details": []
+                #"details": [] 
             }
         
         queue = deque([(component, 0)]) #start component and depth 0
         visited = {component}
         allNeighbors = []
+        depthCounter = 0
 
 
         while queue:
@@ -167,7 +168,7 @@ class CircuitGraph:
 
                 #whenever Node is a component it is added to the neighbors, nets are only added if the ignore_Power flag is false
                 if (self.nodes[neighbor]["type"] == "component") or (not ignore_Power and neighbor in self.power_symbols):
-                    allNeighbors.append(neighbor)
+                    allNeighbors.append((currentDepth + 1, neighbor))
 
 
         details = [
@@ -181,7 +182,7 @@ class CircuitGraph:
             "start": component,
             "radius": radius,
             "neighborhood": allNeighbors,
-            "details": details
+            #"details": details
         }
 
     def _build_graph(self):

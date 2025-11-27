@@ -218,8 +218,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
         
     @mcp.tool()
-    async def analyze_functional_block(project_path: str, schematic_path: str, center_component: str, ignore_power:bool,  ctx: Context | None,
-                                    radius: int = 2) -> Dict:
+    async def analyze_functional_block(project_path: str, schematic_path: str, center_component: str, ignore_power:bool, radius: int, ctx: Context | None) -> Dict:
         
         """
         Analyze the functional block around a given component in a schematic.
