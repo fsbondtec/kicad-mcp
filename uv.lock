@@ -581,6 +581,15 @@ wheels = [
 ]
 
 [[package]]
+name = "future"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/b2/4140c69c6a66432916b26158687e821ba631a4c9273c474343badf84d3ba/future-1.0.0.tar.gz", hash = "sha256:bd2968309307861edae1458a4f8a4f3598c03be43b97521076aebf5d94c07b05", size = 1228490, upload-time = "2024-02-21T11:52:38.461Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/71/ae30dadffc90b9006d77af76b393cb9dfbfc9629f339fc1574a1c52e6806/future-1.0.0-py3-none-any.whl", hash = "sha256:929292d34f5872e70396626ef385ec22355a1fae8ad29e1a734c3e43f9fbc216", size = 491326, upload-time = "2024-02-21T11:52:35.956Z" },
+]
+
+[[package]]
 name = "greenlet"
 version = "3.2.3"
 source = { registry = "https://pypi.org/simple" }
@@ -759,6 +768,8 @@ source = { editable = "." }
 dependencies = [
     { name = "defusedxml" },
     { name = "fastmcp" },
+    { name = "kinparse" },
+    { name = "kiutils" },
     { name = "mcp", extra = ["cli"] },
     { name = "pandas" },
     { name = "pypdf2" },
@@ -802,6 +813,8 @@ visualization = [
 requires-dist = [
     { name = "defusedxml", specifier = ">=0.7.0" },
     { name = "fastmcp", specifier = ">=2.0.0" },
+    { name = "kinparse", specifier = ">=1.2.4" },
+    { name = "kiutils", specifier = ">=1.4.8" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.0.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pypdf2", specifier = ">=3.0.1" },
@@ -838,6 +851,25 @@ visualization = [
     { name = "cairosvg", specifier = ">=2.7.0" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "playwright", specifier = ">=1.40.0" },
+]
+
+[[package]]
+name = "kinparse"
+version = "1.2.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "future" },
+    { name = "pyparsing" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1f/b4/4ea269822cf21e41637540471816b9816723784cd990a84b64aab35bdc7a/kinparse-1.2.4.tar.gz", hash = "sha256:29e9c99996e0d9374a57f82f391638e2a98edcf3581a55f40d04ca2b1954b2a8", size = 56954, upload-time = "2025-06-26T00:49:27.521Z" }
+
+[[package]]
+name = "kiutils"
+version = "1.4.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/db/07/04d7a636eaf9f54f6e7cdfc2117843ef4cc6a6360a9866fbd76bc2a0d0dd/kiutils-1.4.8.tar.gz", hash = "sha256:18c5803283e579cfe8772955e7702548d7139e0fc630daa579ed6b2b767db846", size = 84024, upload-time = "2024-02-02T23:38:00.283Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8c/c0/381ece43b464ce8aff02a327b0d5cdc011b8c0d9a652e245b05e0bb0810a/kiutils-1.4.8-py3-none-any.whl", hash = "sha256:ca7c5c7eafb7bc33daa3d6cfe42cc704be2bcd2206103b28ad2682d88a6072ae", size = 93827, upload-time = "2024-02-02T23:37:58.443Z" },
 ]
 
 [[package]]
@@ -1611,6 +1643,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b0/77/a5b8c569bf593b0140bde72ea885a803b82086995367bf2037de0159d924/pygments-2.19.2.tar.gz", hash = "sha256:636cb2477cec7f8952536970bc533bc43743542f70392ae026374600add5b887", size = 4968631, upload-time = "2025-06-21T13:39:12.283Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/21/705964c7812476f378728bdf590ca4b771ec72385c533964653c68e86bdc/pygments-2.19.2-py3-none-any.whl", hash = "sha256:86540386c03d588bb81d44bc3928634ff26449851e99741617ecb9037ee5ec0b", size = 1225217, upload-time = "2025-06-21T13:39:07.939Z" },
+]
+
+[[package]]
+name = "pyparsing"
+version = "3.2.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f2/a5/181488fc2b9d093e3972d2a472855aae8a03f000592dbfce716a512b3359/pyparsing-3.2.5.tar.gz", hash = "sha256:2df8d5b7b2802ef88e8d016a2eb9c7aeaa923529cd251ed0fe4608275d4105b6", size = 1099274, upload-time = "2025-09-21T04:11:06.277Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/10/5e/1aa9a93198c6b64513c9d7752de7422c06402de6600a8767da1524f9570b/pyparsing-3.2.5-py3-none-any.whl", hash = "sha256:e38a4f02064cf41fe6593d328d0512495ad1f3d8a91c4f73fc401b3079a59a5e", size = 113890, upload-time = "2025-09-21T04:11:04.117Z" },
 ]
 
 [[package]]
