@@ -107,7 +107,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
             response = {
                 "success": True,
                 "nodes": graph.nodes,
-                "edges": graph.edges,
                 "adjacency_list": graph.adjacency_list
             }
             

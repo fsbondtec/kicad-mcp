@@ -59,11 +59,8 @@ class NetlistParser:
             component_data = {
                 "lib_id": f"{part.lib}:{part.name}",
                 "value": part.value,
-                "footprint": part.footprint,
                 "description": part.desc,
-                "lib": part.lib,
                 "name": part.name,
-                "sheet_names": part.sheetpath.names
             }
             
             self.components[part.ref] = component_data
@@ -71,14 +68,16 @@ class NetlistParser:
         for net in nlst.nets:
             net_pins = []
             
-            for pin in net.pins:
-                net_pins.append({
-                    "component": pin.ref,
-                    "pin": pin.num,
-                    "electrical_type": pin.type
-                })
-            
-            self.nets[net.name] = net_pins
+            #filter not connected nets
+            if "unconnected" not in net.name:
+                for pin in net.pins:
+                    net_pins.append({
+                        "component": pin.ref,
+                        "pin": pin.num,
+                        "electrical_type": pin.type
+                    })
+                
+                self.nets[net.name] = net_pins
 
         return {
             "components": self.components,
