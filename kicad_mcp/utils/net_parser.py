@@ -5,7 +5,7 @@ from collections import defaultdict
 import subprocess
 import tempfile
 
-from kicad_mcp.tools.drc_impl.cli_drc import find_kicad_cli
+from kicad_mcp.tools.cli_drc import find_kicad_cli
 
 class NetlistParser:
     def __init__(self, schematic_path: str):

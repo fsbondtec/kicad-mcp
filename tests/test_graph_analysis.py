@@ -4,25 +4,27 @@ import tempfile
 import os
 import pytest
 
-from kicad_mcp.utils.graph_analysis import CircuitGraph, GLOBAL_KICAD_POWER_SYMBOLS
+from kicad_mcp.utils.graph_analysis import CircuitGraph
+
+
 
 class TestCircuitGraph:
 
-    def test_single_component_no_nets(self):
+    def test_single_component_no_nets(self, tmp_path):
         """Test graph with single component and no nets"""
         netlist_data = {
             'components': {'C1': {'lib_id': 'Device:C', 'value': 'C', 'footprint': '', 'description': 'Unpolarized capacitor', 'lib': 'Device', 'name': 'C', 'sheet_names': '/'}},
             'nets': {}
         }
 
-        graph = CircuitGraph(netlist_data)
+        graph = CircuitGraph(netlist_data, str(tmp_path))
         
         assert 'C1' in graph.nodes
         assert graph.nodes['C1']['type'] == 'component'
         assert graph.nodes['C1']['value'] == 'C'
         assert len(graph.adjacency_list['C1']) == 0
 
-    def test_building_Graph(self):
+    def test_building_Graph(self, tmp_path):
         """Test building the graph with nets and components"""
 
         netlist_data = {
@@ -36,7 +38,7 @@ class TestCircuitGraph:
                     'unconnected-(R1-Pad1)': [{'component': 'R1', 'pin': '1'}]}
         }
 
-        graph = CircuitGraph(netlist_data)
+        graph = CircuitGraph(netlist_data, str(tmp_path))
 
 
         #Check Nodes
@@ -68,7 +70,7 @@ class TestCircuitGraph:
         assert '2' in graph.edges[('C1', 'GND')]['pins']
 
 
-    def test_net_with_multiple_Pins(self):
+    def test_net_with_multiple_Pins(self, tmp_path):
         """Test building the graph with nets and components
         """
 
@@ -80,7 +82,7 @@ class TestCircuitGraph:
                     'GND': [{'component': 'R2', 'pin': '1'}, {'component': 'R2', 'pin': '2'}, {'component': 'R2', 'pin': '3'}]}
         }
 
-        graph = CircuitGraph(netlist_data)
+        graph = CircuitGraph(netlist_data, str(tmp_path))
 
         edge = graph.edges[('R2', 'GND')]
         assert len(edge['pins']) == 3
@@ -128,45 +130,44 @@ class TestFindPath:
             }
         }
                 
-    #TODO: change tests for abstraction level
-    def test_path_to_self_component(self, simple_chain_netlist):
+    def test_path_to_self_component(self, simple_chain_netlist, tmp_path):
         """Test path from component to itself"""
 
-        graph = CircuitGraph(simple_chain_netlist)
+        graph = CircuitGraph(simple_chain_netlist, str(tmp_path))
 
-        result = graph.find_path('R1', 'R1', ignore_Power=True)
+        result = graph.find_path('R1', 'R1', True, 10)
             
         assert result['success'] is True
         assert result['path'] == ['R1']
         assert result['path_length'] == 1
         assert len(result['component_details']) == 1
     
-    def test_no_path(self, simple_chain_netlist):
+    def test_no_path(self, simple_chain_netlist, tmp_path):
         """Test path with non-existent component"""
 
-        graph = CircuitGraph(simple_chain_netlist)
-        result = graph.find_path('R1', 'R20', ignore_Power=False)
+        graph = CircuitGraph(simple_chain_netlist, str(tmp_path))
+        result = graph.find_path('R1', 'R20', False, 10)
         
-        assert result is None
+        assert result["path"] is None
 
-    def test_simple_adjacent_path(self, simple_chain_netlist):
+    def test_simple_adjacent_path(self, simple_chain_netlist, tmp_path):
         """Test path between adjacent components"""
 
-        graph = CircuitGraph(simple_chain_netlist)
-        result = graph.find_path('R1', 'R2', ignore_Power=True)
+        graph = CircuitGraph(simple_chain_netlist, str(tmp_path))
+        result = graph.find_path('R1', 'R2', True, 10)
         
         assert result['success'] is True
         assert 'R1' in result['path']
         assert 'R2' in result['path']
         assert 'Net1' in result['path']
-        assert result['path_length'] == 2
+        assert result['path_length'] == 1
         assert len(result['component_details']) == 2
     
-    def test_path(self, simple_chain_netlist):
+    def test_path(self, simple_chain_netlist, tmp_path):
         """Test path between two components"""
 
-        graph = CircuitGraph(simple_chain_netlist)
-        result = graph.find_path('R1', 'R3', ignore_Power=True)
+        graph = CircuitGraph(simple_chain_netlist, str(tmp_path))
+        result = graph.find_path('R1', 'R3', True, 10)
         
         assert result['success'] is True
 
@@ -176,29 +177,19 @@ class TestFindPath:
         assert result['path'][3] == 'Net2'
         assert result['path'][4] == 'R3'
 
-        assert result['path_length'] == 3
+        assert result['path_length'] == 2
 
-    def test_ignore_power_nets_false(self, power_net_netlist):
-        """path without power nets"""
-
-        graph = CircuitGraph(power_net_netlist)
-        result = graph.find_path('R1', 'U1', ignore_Power=True)
-        
-        assert result['success'] is False
-        assert result['path'] is None
-        assert result['path_length'] == 0
-
-    def test_ignore_power_nets_false(self, power_net_netlist):
+    def test_ignore_power_nets_false(self, power_net_netlist, tmp_path):
         """path with power nets"""
 
-        graph = CircuitGraph(power_net_netlist)
-        result = graph.find_path('R1', 'U1', ignore_Power=False)
+        graph = CircuitGraph(power_net_netlist, str(tmp_path))
+        result = graph.find_path('R1', 'U1', False, 10)
         
         assert result['success'] is True
-        assert result['path_length'] == 2  
+        assert result['path_length'] == 1  
         assert 'VCC' in result['path']
 
-    def test_power_general(self):
+    def test_power_general(self, tmp_path):
 
         netlist_data = {
             'components': {
@@ -215,25 +206,28 @@ class TestFindPath:
             }
         }
 
-        graph = CircuitGraph(netlist_data)
+        graph = CircuitGraph(netlist_data, str(tmp_path))
+        graph.power_symbols = {'GND', 'VCC'}
+
 
         #shortest Path is through Signal chain when Power Flag is true
-        result = graph.find_path('R1', 'U1', ignore_Power=True)
+        result = graph.find_path('R1', 'U1', True, 10)
+
 
         assert result['success'] is True
-        assert result['path_length'] == 3
+        assert result['path_length'] == 2
         assert 'R1' in result['path']
         assert 'C1' in result['path']
         assert 'U1' in result['path'] 
 
         #shortest Path is through Power when Power Flag is false
-        result = graph.find_path('R1', 'U1', ignore_Power=False)
+        result = graph.find_path('R1', 'U1', False, 10)
         assert result['success'] is True
-        assert result['path_length'] == 2
+        assert result['path_length'] == 1
         assert 'VCC' in result['path']
 
 
-    def test_max_depth_limit(self, simple_chain_netlist):
+    def test_max_depth_limit(self, simple_chain_netlist, tmp_path):
         """Test max_depth parameter limits path length"""
 
         netlist_data = {
@@ -251,16 +245,16 @@ class TestFindPath:
             }
         }
 
-        graph = CircuitGraph(netlist_data)
-        result = graph.find_path('R1', 'U1', ignore_Power=True, max_depth=2)
+        graph = CircuitGraph(netlist_data, str(tmp_path))
+        graph.power_symbols = {'GND', 'VCC'}
+
+        result = graph.find_path('R1', 'U1', True, max_depth=1)
         
         # Path from R1 to R3 has 3 components, should be limited
-        assert result['success'] is True
-        assert result['path_length'] == 2
-        assert 'R1' in result['path']
-        assert 'C1' in result['path']
-        assert 'U1' not in result['path']
-
+        assert result['success'] is False
+        assert result['path_length'] == 0
+        assert result['path'] is None
+       
 class TestGetNeighborhood:
     """Tests for neighborhood analysis"""
     
@@ -307,48 +301,48 @@ class TestGetNeighborhood:
     
 
     
-    def test_component_nonexistent(self, test_netlist):
+    def test_component_nonexistent(self, test_netlist, tmp_path):
         """Test neighborhood of non-existent component"""
-        graph = CircuitGraph(test_netlist)
-        result = graph.get_neighborhood('R10', ingore_Power=False)
+        graph = CircuitGraph(test_netlist, str(tmp_path))
+        result = graph.get_neighborhood('R10', False, 10)
         
         assert result['success'] is False
         assert result['start'] == 'R10'
         assert len(result['neighborhood']) == 0
 
-    def test_neighbors(self, test_netlist):
+    def test_neighbors(self, test_netlist, tmp_path):
         """Test neighborhood of components with radius 1"""
-        graph = CircuitGraph(test_netlist)
-        result = graph.get_neighborhood('U1', ingore_Power=False, radius=1)
+        graph = CircuitGraph(test_netlist, str(tmp_path))
+        result = graph.get_neighborhood('U1', False, 1)
 
         assert result['success'] is True
         assert result['start'] == 'U1'
         assert result['radius'] == 1
         assert len(result['neighborhood']) == 4
 
-        assert 'R1' in result['neighborhood']
-        assert 'R2' in result['neighborhood']
-        assert 'C1' in result['neighborhood']
-        assert 'C2' in result['neighborhood']
+        assert (1, 'R1') in result['neighborhood']
+        assert (1, 'R2') in result['neighborhood']
+        assert (1, 'C1') in result['neighborhood']
+        assert (1, 'C2') in result['neighborhood']
     
-    def test_neighborhood_radius_2(self, test_netlis_radius_2):
+    def test_neighborhood_radius_2(self, test_netlis_radius_2, tmp_path):
         """Test neighborhood of components with radius 2"""
-        graph = CircuitGraph(test_netlis_radius_2)
-        result = graph.get_neighborhood('U1', ingore_Power=False, radius=2)
+        graph = CircuitGraph(test_netlis_radius_2, str(tmp_path))
+        result = graph.get_neighborhood('U1', False, 2)
 
         assert result['success'] is True
         assert result['start'] == 'U1'
         assert result['radius'] == 2
         assert len(result['neighborhood']) == 6
 
-        assert 'R1' in result['neighborhood']
-        assert 'R2' in result['neighborhood']
-        assert 'C1' in result['neighborhood']
-        assert 'C2' in result['neighborhood']
-        assert 'R3' in result['neighborhood']
-        assert 'C3' in result['neighborhood']
+        assert (1, 'R1') in result['neighborhood']
+        assert (1, 'R2') in result['neighborhood']
+        assert (1, 'C1') in result['neighborhood']
+        assert (1, 'C2') in result['neighborhood']
+        assert (2, 'R3') in result['neighborhood']
+        assert (2, 'C3') in result['neighborhood']
 
-    def test_neighborhood_power_true(self):
+    def test_neighborhood_power_true(self, tmp_path):
         netlist = {
              'components': {
                 'C1': {'lib_id': 'Device:C', 'value': 'C', 'footprint': '', 'description': 'Unpolarized capacitor', 'lib': 'Device', 'name': 'C', 'sheet_names': '/'}, 
@@ -361,17 +355,17 @@ class TestGetNeighborhood:
                             
         }
 
-        graph = CircuitGraph(netlist)
-        result = graph.get_neighborhood('U1', ingore_Power=True, radius=1)
+        graph = CircuitGraph(netlist, str(tmp_path))
+        result = graph.get_neighborhood('U1', True, 1)
 
         assert result['success'] is True
         assert result['start'] == 'U1'
         assert result['radius'] == 1
-        assert len(result['neighborhood']) == 0
+        assert len(result['neighborhood']) == 1
 
         assert 'C1' not in result['neighborhood']
 
-    def test_neighborhood_power_false(self):
+    def test_neighborhood_power_false(self, tmp_path):
         netlist = {
              'components': {
                 'C1': {'lib_id': 'Device:C', 'value': 'C', 'footprint': '', 'description': 'Unpolarized capacitor', 'lib': 'Device', 'name': 'C', 'sheet_names': '/'}, 
@@ -384,18 +378,20 @@ class TestGetNeighborhood:
                             
         }
 
-        graph = CircuitGraph(netlist)
-        result = graph.get_neighborhood('U1', ingore_Power=False, radius=1)
+        graph = CircuitGraph(netlist, str(tmp_path))
+        result = graph.get_neighborhood('U1', False, 1)
+        graph.power_symbols = {'GND'}
+
 
         assert result['success'] is True
         assert result['start'] == 'U1'
         assert result['radius'] == 1
 
         #count with GND net as node -> depends on abstraction level 
-        assert len(result['neighborhood']) == 2
-        assert 'C1' in result['neighborhood']
+        assert len(result['neighborhood']) == 1
+        assert (1, 'C1') in result['neighborhood']
     
-    def test_neighborhood_isolated_component(self):
+    def test_neighborhood_isolated_component(self, tmp_path):
         """Test neighborhood of isolated component"""
 
         netlist = {
@@ -404,8 +400,8 @@ class TestGetNeighborhood:
             },
             'nets': {}
         }
-        graph = CircuitGraph(netlist)
-        result = graph.get_neighborhood('R1', ingore_Power=False, radius=1)
+        graph = CircuitGraph(netlist, str(tmp_path))
+        result = graph.get_neighborhood('R1', False, 1)
         
         assert result['success'] is True
         assert len(result['neighborhood']) == 0
@@ -413,7 +409,7 @@ class TestGetNeighborhood:
 class TestEdgeCases:
     """Tests for edge cases and error conditions"""
     
-    def test_duplicate_connections(self):
+    def test_duplicate_connections(self, tmp_path):
         """Test duplicate pin connections"""
 
         netlist_data = {
@@ -427,7 +423,7 @@ class TestEdgeCases:
                 ]
             }
         }
-        graph = CircuitGraph(netlist_data)
+        graph = CircuitGraph(netlist_data, str(tmp_path))
     
         #when duplicate nodes and nets are added once because of set as adjacency List
         assert 'R1' in graph.nodes

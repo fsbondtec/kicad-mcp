@@ -6,7 +6,7 @@ from kiutils.schematic import Schematic
 from kicad_mcp.utils.file_utils import get_project_files
 
 class CircuitGraph:
-    def __init__(self, netlist_data: Dict[str, Any], project_path: str | None):
+    def __init__(self, netlist_data: Dict[str, Any], project_path: str):
         """Initialisiere Graph aus KiCad-Netlist-Daten
         
         Args:
@@ -93,7 +93,6 @@ class CircuitGraph:
                 new_path = path + [neighbor]
                 
                 if neighbor == end:
-
                     component_details = [
                     {"ref": node, **self.nodes[node]} 
                     for node in new_path 

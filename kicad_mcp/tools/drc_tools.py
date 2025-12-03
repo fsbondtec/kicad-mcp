@@ -10,7 +10,7 @@ from kicad_mcp.utils.file_utils import get_project_files
 from kicad_mcp.utils.drc_history import save_drc_result, get_drc_history, compare_with_previous
 
 # Import implementations
-from kicad_mcp.tools.drc_impl.cli_drc import run_drc_via_cli
+from kicad_mcp.tools.cli_drc import run_drc_via_cli
 
 def register_drc_tools(mcp: FastMCP) -> None:
     """Register DRC tools with the MCP server.
@@ -29,10 +29,10 @@ def register_drc_tools(mcp: FastMCP) -> None:
         Returns:
             Dictionary with DRC history entries
         """
-       # print(f"Getting DRC history for project: {project_path}")
+        #print(f"Getting DRC history for project: {project_path}", file=sys.stderr)
         
         if not os.path.exists(project_path):
-          #  print(f"Project not found: {project_path}")
+            #print(f"Project not found: {project_path}", file=sys.stderr)
             return {"success": False, "error": f"Project not found: {project_path}"}
         
         # Get history entries
