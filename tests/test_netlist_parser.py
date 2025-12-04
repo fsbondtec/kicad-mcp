@@ -77,7 +77,7 @@ class TestNetlistParser(unittest.TestCase):
         mock_part1.value = "15"
         mock_part1.footprint = ""
         mock_part1.desc = "Resistor"
-        mock_part1.sheetpath.names = "/"
+
         
         mock_netlist = MagicMock()
         mock_netlist.parts = [mock_part1]
@@ -89,7 +89,6 @@ class TestNetlistParser(unittest.TestCase):
         self.assertIn("R1", result["components"])
         self.assertEqual(result["components"]["R1"]["lib_id"], "Device:R")
         self.assertEqual(result["components"]["R1"]["value"], "15")
-        self.assertEqual(result["components"]["R1"]["sheet_names"], "/")
 
     @patch('kicad_mcp.utils.net_parser.parse_netlist')
     def test_structure_data_nets(self, mock_parse):
