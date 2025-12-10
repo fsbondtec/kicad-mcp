@@ -9,7 +9,6 @@ import hashlib
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
 
-# Cache for storing netlist and graph
 project_cache: Dict[str, Dict[str, Any]] = {}
 
 def get_data(project_path: str, schematic_path: str) -> tuple[CircuitGraph, Dict]:

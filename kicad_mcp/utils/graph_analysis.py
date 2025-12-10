@@ -1,6 +1,12 @@
 import os
 from collections import defaultdict, deque
 from typing import Any, Dict, List
+
+#new Kicad API instead of pcbnew:
+from kipy import KiCad
+from kipy.common_types import Vector2
+from kipy.board_types import BoardSegment
+
 from kiutils.schematic import Schematic
 
 from kicad_mcp.utils.file_utils import get_project_files
@@ -42,6 +48,7 @@ class CircuitGraph:
                 "path": None,
                 "path_length": 0,
                 #"component_details": []
+                "nets": []
             }
     
         if start == end:
@@ -59,6 +66,7 @@ class CircuitGraph:
             
         queue = deque([(start, [start], 0)]) #first Node, Path, component_count
         visited = {start}
+
     
         while queue:
             current, path, comp_count = queue.popleft()
@@ -99,12 +107,19 @@ class CircuitGraph:
                     if self.nodes[node]["type"] == "component"
                     ]
 
+                    nets = [
+                    {"ref": node, **self.nodes[node]} 
+                    for node in new_path 
+                    if self.nodes[node]["type"] == "net"
+                    ]
+
                             
                     return {
                         "success": True,
                         "path": new_path,
                         "path_length": new_comp_count,
                         "component_details": component_details,
+                        "nets": nets
                     }
 
                 visited.add(neighbor)
@@ -116,6 +131,55 @@ class CircuitGraph:
             "path_length": 0,
             #"component_details": []
         } #no path
+    
+    def mark_path(self, nets: list) -> Dict[str, Any]:
+        """Highlight the given Nets on the Layout in Kicad"""
+
+        #connection to running kicad instance
+        kicad = KiCad()
+
+        #get oben Board
+        board = kicad.get_board()
+
+        created_items = []
+
+        target_nets = [net["ref"] for net in nets]
+       
+        #start the commit
+        commit = board.begin_commit()
+
+        for track in board.get_tracks(): 
+            net = track.net
+
+            if net and net.name in target_nets:
+                start = track.start
+                end = track.end
+
+                seg = BoardSegment()
+
+                start = Vector2()
+                start.x = track.start.x
+                start.y = track.start.y
+                seg.start = start
+
+                end = Vector2()
+                end.x = track.end.x
+                end.y = track.end.y
+                seg.end = end
+
+                #layer can be chosen (in kicad 9.0 is 45 = User.ECO1)
+                seg.layer = 45
+
+                #for highlight take double of original width
+                seg.attributes.stroke.width = int(track.width * 2) 
+                
+                created_item = board.create_items(seg)
+                created_items.extend(created_item if isinstance(created_item, list) else [created_item])
+
+        if created_items:
+            board.add_to_selection(created_items)
+
+        board.push_commit(commit, "Highlighted Path")
 
 
     def get_neighborhood(self, component: str, ignore_Power: bool, radius: int) -> Dict[str, Any]:

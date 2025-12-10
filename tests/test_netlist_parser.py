@@ -78,7 +78,7 @@ class TestNetlistParser(unittest.TestCase):
         mock_part1.footprint = ""
         mock_part1.desc = "Resistor"
 
-        
+
         mock_netlist = MagicMock()
         mock_netlist.parts = [mock_part1]
         mock_netlist.nets = []
