@@ -322,6 +322,57 @@ def register_graph_tools(mcp: FastMCP) -> None:
             
         except Exception as e:
             return {"success": False, "error": str(e)}
+        
+    @mcp.tool()
+    async def highlight_path(project_path: str, schematic_path: str, path_nets: list, ctx: Context | None) -> Dict[str, Any]:
+        """
+        Mark the given path in KiCad schematic.
+
+        Args:
+            schematic_path: Path to the KiCad schematic file (.kicad_sch)
+            path_nets: List of nets to mark
+            ctx: MCP context
+
+        Returns:
+            Dictionary with success status
+        """
+        try:
+            if not schematic_path:
+                return {
+                    "success": False,
+                    "error": "Schematic path cannot be empty"
+                }
+            
+            if not schematic_path.endswith('.kicad_sch'):
+                return {
+                    "success": False,
+                    "error": "Invalid file type. Expected .kicad_sch file"
+                }
+            
+            if not os.path.exists(schematic_path):
+                return {
+                    "success": False,
+                    "error": f"Schematic file not found: {schematic_path}"
+                }
+            
+            graph, _ = get_data(project_path, schematic_path)
+            mark_result = graph.mark_path(path_nets)
+
+            if ctx:
+                await ctx.report_progress(100, 100)
+            
+            return {
+                **mark_result,
+                "project_path": project_path,
+                "schematic_path": schematic_path,
+                "requested_nets": len(path_nets)
+            }
+        
+        except Exception as e:
+            if ctx:
+                ctx.info(f"Error marking path: {str(e)}")
+            return {"success": False, "error": str(e)}
+            
                 
 
 

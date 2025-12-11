@@ -135,51 +135,130 @@ class CircuitGraph:
     def mark_path(self, nets: list) -> Dict[str, Any]:
         """Highlight the given Nets on the Layout in Kicad"""
 
-        #connection to running kicad instance
-        kicad = KiCad()
+        result = {
+            "success": False,
+            "created_items": 0,
+            "highlighted_nets": [],
+            "errors": []
+        }
 
-        #get oben Board
-        board = kicad.get_board()
-
-        created_items = []
-
-        target_nets = [net["ref"] for net in nets]
-       
-        #start the commit
-        commit = board.begin_commit()
-
-        for track in board.get_tracks(): 
-            net = track.net
-
-            if net and net.name in target_nets:
-                start = track.start
-                end = track.end
-
-                seg = BoardSegment()
-
-                start = Vector2()
-                start.x = track.start.x
-                start.y = track.start.y
-                seg.start = start
-
-                end = Vector2()
-                end.x = track.end.x
-                end.y = track.end.y
-                seg.end = end
-
-                #layer can be chosen (in kicad 9.0 is 45 = User.ECO1)
-                seg.layer = 45
-
-                #for highlight take double of original width
-                seg.attributes.stroke.width = int(track.width * 2) 
+        try:
+            if not nets:
+                result["errors"].append("No nets provided")
+                return result
                 
-                created_item = board.create_items(seg)
-                created_items.extend(created_item if isinstance(created_item, list) else [created_item])
+            if not isinstance(nets, list):
+                result["errors"].append("Nets must be a list")
+                return result
+            
+            try: 
+                kicad = KiCad()
+            except Exception as e:
+                result["errors"].append(f"Failed to connect to KiCad: {str(e)}, You need to have Kicad Project running and open")
+                return result
+            
+            try:
+                board = kicad.get_board()
+                if not board:
+                    result["errors"].append("No board is currently open in KiCad")
+                    return result
+            except Exception as e:
+                result["errors"].append(f"Failed to get board: {str(e)}")
+                return result
 
-        if created_items:
-            board.add_to_selection(created_items)
 
-        board.push_commit(commit, "Highlighted Path")
+            created_items = []
+            target_nets = []
+
+            for net in nets:
+                if isinstance(net, dict) and "ref" in net:
+                    target_nets.append(net["ref"])
+                else:
+                    result["errors"].append(f"Invalid net format: {net}")
+
+            if not target_nets:
+                result["errors"].append("No valid net references found")
+                return result
+       
+
+            #start the commit
+            try:
+                commit = board.begin_commit()
+            except Exception as e:
+                result["errors"].append(f"Failed to begin commit: {str(e)}")
+                return result
+            
+
+            try:
+            # Iterate through tracks
+                tracks = board.get_tracks()
+                if not tracks:
+                    result["errors"].append("No tracks found on board")
+                    board.push_commit(commit, "Highlighted Path - No tracks")
+                    return result
+
+                for track in board.get_tracks(): 
+                    try: 
+                        net = track.net
+
+                        if net and net.name in target_nets:
+                            seg = BoardSegment()
+
+                            start = Vector2()
+                            start.x = track.start.x
+                            start.y = track.start.y
+                            seg.start = start
+
+                            end = Vector2()
+                            end.x = track.end.x
+                            end.y = track.end.y
+                            seg.end = end
+
+                            #layer can be chosen (in kicad 9.0 is 45 = User.ECO1)
+                            seg.layer = 45
+
+                            #for highlight take double of original width
+                            seg.attributes.stroke.width = int(track.width * 2) 
+                            
+                            created_item = board.create_items(seg)
+                            created_items.extend(created_item if isinstance(created_item, list) else [created_item])
+
+                            if net.name not in result["highlighted_nets"]:
+                                result["highlighted_nets"].append(net.name)
+                            
+                    except:
+                        result["errors"].append(f"Failed to process track: {str(e)}")
+                        continue
+
+                if created_items:
+                    try:
+                        board.add_to_selection(created_items)
+                        result["created_items"] = len(created_items)
+                    except Exception as e:
+                        result["errors"].append(f"Failed to add items to selection: {str(e)}")
+                else:
+                    result["errors"].append(f"No tracks found for given nets")
+
+                try:
+                    board.push_commit(commit, "Highlighted Path")
+                    result["success"] = bool(created_items)
+                except Exception as e:
+                    result["errors"].append(f"Failed to push commit: {str(e)}")
+                    return result
+                
+            except Exception as e:
+                result["errors"].append(f"Error during track processing: {str(e)}")
+                try:
+                    board.push_commit(commit, "Highlighted Path - Failed")
+                except:
+                    pass
+                return result
+            
+        except Exception as e:
+            result["errors"].append(f"Unexpected error: {str(e)}")
+            return result
+    
+        return result
 
 
     def get_neighborhood(self, component: str, ignore_Power: bool, radius: int) -> Dict[str, Any]:
