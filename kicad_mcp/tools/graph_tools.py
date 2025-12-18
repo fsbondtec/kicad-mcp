@@ -412,9 +412,9 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": str(e)}
     
     @mcp.tool()
-    async def unmark_all_paths(project_path: str, schematic_path: str, layers: list[str] | None, ctx: Context | None) -> Dict[str, Any]:
+    async def unmark_paths(project_path: str, schematic_path: str, layers: list[str] | None, ctx: Context | None) -> Dict[str, Any]:
         """
-        Unmark all paths that have been highlighted in the given Kicad Project pcb File
+        Unmark all paths that are on the given layers in the Kicad Project pcb File 
 
         Args:
             schematic_path: Path to the KiCad schematic file (.kicad_sch)
@@ -454,9 +454,17 @@ def register_graph_tools(mcp: FastMCP) -> None:
             all_item_ids = []
             layers_cleared = set()
 
+            layers_to_keep = []
+            layers_to_remove = []
+
             for entry in highlight_cache[cache_key]:
-                all_item_ids.extend(entry["item_ids"])
-                layers_cleared.add(entry["layer"])
+                if layers is None or entry["layer"] in layers:
+                    all_item_ids.extend(entry["item_ids"])
+                    layers_cleared.add(entry["layer"])
+                    layers_to_remove.append(entry)
+                else:
+                    layers_to_keep.append(entry)
+            
             
             if not all_item_ids:
                 del highlight_cache[cache_key]
@@ -470,8 +478,11 @@ def register_graph_tools(mcp: FastMCP) -> None:
             graph, _ = get_data(project_path, schematic_path)
             unmark_result = graph.unmark_path(all_item_ids)
 
-            paths_cleared = len(highlight_cache[cache_key])
-            del highlight_cache[cache_key]
+            paths_cleared = len(layers_to_remove)
+            if layers_to_keep:
+                highlight_cache[cache_key] = layers_to_keep
+            else:
+                del highlight_cache[cache_key]
 
 
             if ctx:
@@ -485,6 +496,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 "paths_cleared": paths_cleared,
                 "layers_cleared": list(layers_cleared),
                 "errors": unmark_result.get("errors", []),
+                "layers_remaining": sorted(list({e["layer"] for e in layers_to_keep})) if layers_to_keep else [],
                 "info": "if something was not deletet just hit Ctr + Z to revert the last changes or remove the highlights manually"
             }
         
