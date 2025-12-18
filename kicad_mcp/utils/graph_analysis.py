@@ -1,11 +1,12 @@
 import os
 from collections import defaultdict, deque
 from typing import Any, Dict, List
+import subprocess
 
 #new Kicad API instead of pcbnew:
 from kipy import KiCad
 from kipy.common_types import Vector2
-from kipy.board_types import BoardSegment
+from kipy.board_types import BoardSegment, KIID
 
 from kiutils.schematic import Schematic
 
@@ -137,7 +138,8 @@ class CircuitGraph:
 
         result = {
             "success": False,
-            "created_items": 0,
+            "created_items_length": 0,
+            "created_items": [],
             "highlighted_nets": [],
             "errors": []
         }
@@ -168,18 +170,12 @@ class CircuitGraph:
 
 
             created_items = []
-            target_nets = []
-
-            for net in nets:
-                if isinstance(net, dict) and "ref" in net:
-                    target_nets.append(net["ref"])
-                else:
-                    result["errors"].append(f"Invalid net format: {net}")
+            created_items_id = [] 
+            target_nets = nets
 
             if not target_nets:
                 result["errors"].append("No valid net references found")
                 return result
-       
 
             #start the commit
             try:
@@ -221,8 +217,12 @@ class CircuitGraph:
                             seg.attributes.stroke.width = int(track.width * 2) 
                             
                             created_item = board.create_items(seg)
-                            created_items.extend(created_item if isinstance(created_item, list) else [created_item])
 
+                            if isinstance(created_item, list):
+                                created_items.extend(created_item)
+                                for item in created_items:
+                                    created_items_id.append(item.id)
+            
                             if net.name not in result["highlighted_nets"]:
                                 result["highlighted_nets"].append(net.name)
                             
@@ -233,7 +233,8 @@ class CircuitGraph:
                 if created_items:
                     try:
                         board.add_to_selection(created_items)
-                        result["created_items"] = len(created_items)
+                        result["created_items_length"] = len(created_items)
+                        result["created_items"] = created_items_id
                     except Exception as e:
                         result["errors"].append(f"Failed to add items to selection: {str(e)}")
                 else:
@@ -259,7 +260,46 @@ class CircuitGraph:
             return result
     
         return result
+    
+    def unmark_path(self, created_items: list ) -> Dict[str, Any]:
+        result = {
+            "success": False,
+            "deleted_items": 0,
+            "errors": []
+        }
 
+        try: 
+            kicad = KiCad()
+        except Exception as e:
+            result["errors"].append(f"Failed to connect to KiCad: {str(e)}, You need to have Kicad Project running and open")
+            return result
+        
+        try:
+            board = kicad.get_board()
+            if not board:
+                result["errors"].append("No board is currently open in KiCad")
+                return result
+        except Exception as e:
+            result["errors"].append(f"Failed to get board: {str(e)}")
+            return result
+        
+        try:
+            commit = board.begin_commit()
+        
+            try:
+                board.remove_items_by_id(created_items)  
+                result["deleted_items"] = len(created_items)
+            except Exception as e:
+                result["errors"].append(f"Failed to delete items")
+            
+            board.push_commit(commit, "Removed Highlight Path")
+            result["success"] = result["deleted_items"] > 0
+            
+        except Exception as e:
+            result["errors"].append(f"Failed to clear highlights: {str(e)}")
+            return result
+        
+        return result
 
     def get_neighborhood(self, component: str, ignore_Power: bool, radius: int) -> Dict[str, Any]:
         """Find componoents in a given distance (for Functional Block Analysis)"""

@@ -10,6 +10,7 @@ from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
 
 project_cache: Dict[str, Dict[str, Any]] = {}
+highlight_cache = {} #cache for all highlighted KIIDs
 
 def get_data(project_path: str, schematic_path: str) -> tuple[CircuitGraph, Dict]:
     """Get cached graph or create new one if not exists.
@@ -326,11 +327,11 @@ def register_graph_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     async def highlight_path(project_path: str, schematic_path: str, path_nets: list, ctx: Context | None) -> Dict[str, Any]:
         """
-        Mark the given path in KiCad schematic.
+        Mark the given path in KiCad pcb File on the user Layer Eco.1
 
         Args:
             schematic_path: Path to the KiCad schematic file (.kicad_sch)
-            path_nets: List of nets to mark
+            path_nets: simple list of nets to mark
             ctx: MCP context
 
         Returns:
@@ -358,6 +359,71 @@ def register_graph_tools(mcp: FastMCP) -> None:
             graph, _ = get_data(project_path, schematic_path)
             mark_result = graph.mark_path(path_nets)
 
+            #cache die übergebenen Ids
+            created_ids = mark_result["created_items"]
+            cache_key = f"{project_path}:current_highlight"
+            highlight_cache[cache_key] = created_ids
+
+            if ctx:
+                await ctx.report_progress(100, 100)
+
+            
+            return {
+                "project_path": project_path,
+                "schematic_path": schematic_path,
+                "requested_nets": len(path_nets),
+                "cache-key": cache_key,
+                "created_items_len": len(mark_result["created_items"])
+            }
+        
+        except Exception as e:
+            if ctx:
+                ctx.info(f"Error marking path: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    @mcp.tool()
+    async def unmark_all_paths(project_path: str, schematic_path: str, ctx: Context | None) -> Dict[str, Any]:
+        """
+        Unmark all paths that have been highlighted in the given Kicad Project pcb File
+
+        Args:
+            schematic_path: Path to the KiCad schematic file (.kicad_sch)
+            created_items: all created highlighted objects that need to be removed 
+            ctx: MCP context
+
+        Returns:
+            Dictionary with success status
+        """
+        try:
+            if not schematic_path:
+                return {
+                    "success": False,
+                    "error": "Schematic path cannot be empty"
+                }
+            
+            if not schematic_path.endswith('.kicad_sch'):
+                return {
+                    "success": False,
+                    "error": "Invalid file type. Expected .kicad_sch file"
+                }
+            
+            if not os.path.exists(schematic_path):
+                return {
+                    "success": False,
+                    "error": f"Schematic file not found: {schematic_path}"
+                }
+            
+            cache_key = f"{project_path}:current_highlight"
+
+            if cache_key not in highlight_cache:
+                return {"success": False, "error": "No cached highlights found"}
+    
+
+            graph, _ = get_data(project_path, schematic_path)
+            mark_result = graph.unmark_path(highlight_cache[cache_key])
+            del highlight_cache[cache_key]
+
+
             if ctx:
                 await ctx.report_progress(100, 100)
             
@@ -365,15 +431,12 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 **mark_result,
                 "project_path": project_path,
                 "schematic_path": schematic_path,
-                "requested_nets": len(path_nets)
             }
         
         except Exception as e:
             if ctx:
                 ctx.info(f"Error marking path: {str(e)}")
             return {"success": False, "error": str(e)}
-            
-                
 
 
 
