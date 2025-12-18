@@ -325,13 +325,14 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": str(e)}
         
     @mcp.tool()
-    async def highlight_path(project_path: str, schematic_path: str, path_nets: list, ctx: Context | None) -> Dict[str, Any]:
+    async def highlight_path(project_path: str, schematic_path: str, path_nets: list, layer: str | None, ctx: Context | None) -> Dict[str, Any]:
         """
-        Mark the given path in KiCad pcb File on the user Layer Eco.1
+        Mark the given path in KiCad pcb File on a User Layer.
 
         Args:
             schematic_path: Path to the KiCad schematic file (.kicad_sch)
             path_nets: simple list of nets to mark
+            layer: Optional specific layer name (e.g., "Eco1.User"). If None, auto-select.
             ctx: MCP context
 
         Returns:
@@ -357,23 +358,52 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 }
             
             graph, _ = get_data(project_path, schematic_path)
-            mark_result = graph.mark_path(path_nets)
+
+            layer_info = graph.get_user_layers()
+
+            if layer is None:
+                layer = auto_select_layer(project_path, layer_info["available"])
+
+            mark_result = graph.mark_path(path_nets, layer)
+
+            if not mark_result["success"]:
+                return {
+                    "success": False,
+                    "error": "; ".join(mark_result["errors"]),
+                    "available_user_layers": layer_info["available"]
+                }
 
             #cache die übergebenen Ids
-            created_ids = mark_result["created_items"]
-            cache_key = f"{project_path}:current_highlight"
-            highlight_cache[cache_key] = created_ids
+            cache_key = f"{project_path}:highlights"
+
+            if cache_key not in highlight_cache:
+                highlight_cache[cache_key] = []
+        
+            highlight_cache[cache_key].append({
+                "layer": mark_result["used_layer"],
+                "nets": path_nets,
+                "item_ids": mark_result["created_items"]
+            })
+
+            # welche layer werden derzeit verwendet
+            used_layers = {h["layer"] for h in highlight_cache[cache_key]}
+
 
             if ctx:
                 await ctx.report_progress(100, 100)
 
             
             return {
+                "success" : True,
                 "project_path": project_path,
-                "schematic_path": schematic_path,
+                "highlighted_nets": mark_result["highlighted_nets"],
+                "used_layer": mark_result["used_layer"],
+                "available_user_layers": layer_info["available"],
+                "currently_used_layers": list(used_layers),
                 "requested_nets": len(path_nets),
-                "cache-key": cache_key,
-                "created_items_len": len(mark_result["created_items"])
+                "created_items_len": len(mark_result["created_items"]),
+                "suggestion": f"Next path can use one of: {[l for l in layer_info['available'] if l not in used_layers]}"
+
             }
         
         except Exception as e:
@@ -382,13 +412,12 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": str(e)}
     
     @mcp.tool()
-    async def unmark_all_paths(project_path: str, schematic_path: str, ctx: Context | None) -> Dict[str, Any]:
+    async def unmark_all_paths(project_path: str, schematic_path: str, layers: list[str] | None, ctx: Context | None) -> Dict[str, Any]:
         """
         Unmark all paths that have been highlighted in the given Kicad Project pcb File
 
         Args:
             schematic_path: Path to the KiCad schematic file (.kicad_sch)
-            created_items: all created highlighted objects that need to be removed 
             ctx: MCP context
 
         Returns:
@@ -413,14 +442,35 @@ def register_graph_tools(mcp: FastMCP) -> None:
                     "error": f"Schematic file not found: {schematic_path}"
                 }
             
-            cache_key = f"{project_path}:current_highlight"
+            cache_key = f"{project_path}:highlights"
 
             if cache_key not in highlight_cache:
-                return {"success": False, "error": "No cached highlights found"}
+                return {
+                    "success": False, 
+                    "error": "No cached highlights found",  
+                    "info": "if something was not deletet just hit Ctr + Z to revert the last changes or remove the highlights manually"
+                }
     
+            all_item_ids = []
+            layers_cleared = set()
 
+            for entry in highlight_cache[cache_key]:
+                all_item_ids.extend(entry["item_ids"])
+                layers_cleared.add(entry["layer"])
+            
+            if not all_item_ids:
+                del highlight_cache[cache_key]
+                return {
+                    "success": False,
+                    "error": "No items to delete",
+                    "info": "if something was not deletet just hit Ctr + Z to revert the last changes or remove the highlights manually"
+
+                }
+            
             graph, _ = get_data(project_path, schematic_path)
-            mark_result = graph.unmark_path(highlight_cache[cache_key])
+            unmark_result = graph.unmark_path(all_item_ids)
+
+            paths_cleared = len(highlight_cache[cache_key])
             del highlight_cache[cache_key]
 
 
@@ -428,15 +478,38 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 await ctx.report_progress(100, 100)
             
             return {
-                **mark_result,
+                "success": unmark_result["success"],
                 "project_path": project_path,
                 "schematic_path": schematic_path,
+                "deleted_items": unmark_result["deleted_items"],
+                "paths_cleared": paths_cleared,
+                "layers_cleared": list(layers_cleared),
+                "errors": unmark_result.get("errors", []),
+                "info": "if something was not deletet just hit Ctr + Z to revert the last changes or remove the highlights manually"
             }
         
         except Exception as e:
             if ctx:
                 ctx.info(f"Error marking path: {str(e)}")
             return {"success": False, "error": str(e)}
+        
+    def auto_select_layer(project_path: str, available_layers: list[str]) -> str:
+        """
+        Automatically select next unused user layer for highlighting.
+        
+        Prefers Eco1.User, Eco2.User, then User.1-9 in order.
+        """
+        cache_key = f"{project_path}:highlights"
+         
+        if cache_key in highlight_cache:
+            used_layers = {h["layer"] for h in highlight_cache[cache_key]}
+            
+            for layer in available_layers:
+                if layer not in used_layers:
+                    return layer
+        
+        # erster available layer oder default
+        return available_layers[0] if available_layers else "Eco1.User"
 
 
 
