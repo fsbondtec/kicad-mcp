@@ -22,5 +22,6 @@ This will provide:
 - colored Tracks in the PCB File in the color of the Layer that was chosen by Claude
 
 - at first Eco Layer 1 and Eco Layer 2 will be chosen afterward all User Layers are used 
+- you can choose your own Layer
 - when deleting a Path only the Path is deleted, no other components on the Layer
 
