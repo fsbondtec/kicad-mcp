@@ -45,19 +45,3 @@ class TestNetlistPerformance(unittest.TestCase):
 def sample_schematic():
     return test_schematic
 
-
-def test_full_workflow_benchmark(benchmark, sample_schematic):    
-    if not os.path.exists(sample_schematic):
-        pytest.skip(f"Schematic file not found: {sample_schematic}")
-    
-    def workflow():
-        parser = NetlistParser(sample_schematic)
-        parser.export_netlist()
-        result = parser.structure_data()
-        return result
-    
-    result = benchmark(workflow)
-    
-    assert len(result["components"]) > 0, "Should parse components"
-    assert len(result["nets"]) > 0, "Should parse nets"
-        

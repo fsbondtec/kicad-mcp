@@ -25,7 +25,7 @@ This guide will help you set up a Model Context Protocol (MCP) server for KiCad.
 - uv 0.8.0 or higher
 - Claude Desktop (or another MCP client)
 
-## Installation Steps
+## Build
 
 ### 1. Set Up Your Python Environment
 
@@ -33,12 +33,32 @@ First, let's install dependencies and set up our environment:
 
 ```bash
 # Clone the repository
-git clone https://github.com/lamaalrajih/kicad-mcp.git
+git clone https://github.com/fsbondtec/kicad-mcp.git
 cd kicad-mcp
 
 # Install dependencies – `uv` will create a `.venv/` folder automatically
-# (Install `uv` first: `brew install uv` on macOS or `pipx install uv`)
-make install
+# (Install `uv` first: `brew install uv` on macOS or `pip install uv`)
+```bash
+uv sync --group dev
+
+#run all tests
+uv run pytest tests/ -v
+
+#run specific test
+uv run pytest tests/test_example.py -v
+
+#Linting
+uv run ruff check kicad_mcp/ tests/
+uv run mypy kicad_mcp/
+
+#Format Code
+uv run ruff format kicad_mcp/ tests/
+
+#Build:
+uv build
+
+#try to run the server:
+uv run python main.py
 
 # Optional: activate the environment for manual commands
 source .venv/bin/activate
@@ -46,7 +66,8 @@ source .venv/bin/activate
 
 ### 2. Configure Your Environment
 
-Create a `.env` file to customize where the server looks for your KiCad projects:
+Create a `.env` file to customize where the server looks for your KiCad projects or change the path directly in `config.py`
+where the global variables `KICAD_USER_DIR` and `KICAD_APP_PATH` should be changed
 
 ```bash
 # Copy the example environment file
@@ -63,15 +84,8 @@ In the `.env` file, add your custom project directories:
 KICAD_SEARCH_PATHS=~/pcb,~/Electronics,~/Projects/KiCad
 ```
 
-### 3. Run the Server
 
-Once the environment is set up, you can run the server:
-
-```bash
-python main.py
-```
-
-### 4. Configure an MCP Client
+### 3. Configure an MCP Client
 
 Now, let's configure Claude Desktop to use our MCP server:
 
@@ -84,6 +98,9 @@ mkdir -p ~/Library/Application\ Support/Claude
 # Edit the configuration file
 vim ~/Library/Application\ Support/Claude/claude_desktop_config.json
 ```
+
+Or change with Claude Desktop under:
+- Files -> Settings -> Developer -> Edit Config 
 
 2. Add the KiCad MCP server to the configuration:
 
@@ -102,7 +119,7 @@ vim ~/Library/Application\ Support/Claude/claude_desktop_config.json
 
 Replace `/ABSOLUTE/PATH/TO/YOUR/PROJECT/kicad-mcp` with the actual path to your project directory.
 
-### 5. Restart Your MCP Client
+### 4. Restart Your MCP Client
 
 Close and reopen your MCP client to load the new configuration.
 
@@ -138,35 +155,20 @@ For more information on resources vs tools vs prompts, read the [MCP docs](https
 
 The KiCad MCP Server provides several key features, each with detailed documentation:
 
-- **Project Management**: List, examine, and open KiCad projects
-  - *Example:* "Show me all my recent KiCad projects" → Lists all projects sorted by modification date
+- **Project Management**: List, and examine KiCad projects
+  - *Example:* "Show me all my recent KiCad projects" → Lists all projects claude has access to
   
-- **PCB Design Analysis**: Get insights about your PCB designs and schematics
-  - *Example:* "Analyze the component density of my temperature sensor board" → Provides component spacing analysis
+- **Schematic Design Analysis**: Get insights about your schematics
+  - *Example:* "Analyze the High Voltage Part of my Circuit" → Provides high voltage analysis
   
 - **Netlist Extraction**: Extract and analyze component connections from schematics
   - *Example:* "What components are connected to the MCU in my Arduino shield?" → Shows all connections to the microcontroller
   
-- **BOM Management**: Analyze and export Bills of Materials
-  - *Example:* "Generate a BOM for my smart watch project" → Creates a detailed bill of materials
-  
-  - **Design Rule Checking**: Run DRC checks using the KiCad CLI and track your progress over time
+- **Design Rule Checking**: Run DRC checks using the KiCad CLI and track your progress over time
   - *Example:* "Run DRC on my power supply board and compare to last week" → Shows progress in fixing violations
 
-- **PCB Visualization**: Generate visual representations of your PCB layouts
-  - *Example:* "Show me a thumbnail of my audio amplifier PCB" → Displays a visual render of the board
-  
-- **Circuit Pattern Recognition**: Automatically identify common circuit patterns in your schematics
-  - *Example:* "What power supply topologies am I using in my IoT device?" → Identifies buck, boost, or linear regulators
-
-- **Footprint and Symbol Creation**: Let Claude scan Pdfs (use Prompts), create footprints and symbols and save to library table.
-   - *Example:* "Safe the generated Footprint and Symbol Files and add them to the Library" → automate the  process of file creation, directory handling, and global table integration
-
-- **Component Management**: Can place a Component in a PCB File
-- *Example:* "Add a Resistor to this project: ..." → places a resistor randomly in the pcb file of the specified Project
-
-- **Routing**: Can place Routes in a PCB File:
-- *Example:* "Extraxt the netlist and route the connections in the PCB File" -> routes are being placed on the pcb file between the right pads or components (Routes do not have a 45° angle, routes do not have to be within board boundaries, claude does not care about overlaps)
+- **Path Visualisation in PCB File**: Generate visual representations of circuit Paths in PCB
+  - *Example:* "Can you mark this Path in my Project" → Displays a visual representation of the Path on one of the User Layers
 
 For more examples and details on each feature, see the dedicated guides in the documentation. You can also ask the LLM what tools it has access to!
 
@@ -186,12 +188,6 @@ For example, instead of the formal command above, you can simply ask:
 Can you check if there are any design rule violations in my Arduino shield project?
 ```
 
-Or:
-
-```
-I'm working on the temperature sensor circuit. Can you identify what patterns it uses?
-```
-
 The LLM will understand your intent and request the relevant information from the KiCad MCP Server. If it needs clarification about which project you're referring to, it will ask.
 
 ## Documentation
@@ -200,14 +196,8 @@ Detailed documentation for each feature is available in the `docs/` directory:
 
 - [Project Management](docs/project_guide.md)
 - [PCB Design Analysis](docs/analysis_guide.md)
-- [Netlist Extraction](docs/netlist_guide.md)
-- [Bill of Materials (BOM)](docs/bom_guide.md)
 - [Design Rule Checking (DRC)](docs/drc_guide.md)
-- [PCB Visualization](docs/thumbnail_guide.md)
-- [Circuit Pattern Recognition](docs/pattern_guide.md)
-- [Footprint and Symbol generation](docs/footprint_symbol_generation_guide.md)
-- [Prompt Templates](docs/prompt_guide.md)
-- [Component Guide and Routing](docs/component_routing_guide.md)
+- [Highlighting Path in PCB](docs/visualize_path.md)
 
 ## Configuration
 
@@ -219,9 +209,6 @@ The KiCad MCP Server can be configured using environment variables or a `.env` f
 | `KICAD_SEARCH_PATHS` | Comma-separated list of directories to search for KiCad projects | `~/pcb,~/Electronics,~/Projects` |
 | `KICAD_USER_DIR` | Override the default KiCad user directory | `~/Documents/KiCadProjects` |
 | `KICAD_APP_PATH` | Override the default KiCad application path | `/Applications/KiCad7/KiCad.app` |
-TODO
-| `DATASHEET_PATH` | Directory with Datasheets that MCP Server has access to  (Override default Path) | `` |
-
 
 See [Configuration Guide](docs/configuration.md) for more details.
 
@@ -285,38 +272,6 @@ If you encounter issues:
 See [Troubleshooting Guide](docs/troubleshooting.md) for more details.
 
 If you're still not able to troubleshoot, please open a Github issue. 
-
-## Contributing
-
-Want to contribute to the KiCad MCP Server? Here's how you can help improve this project:
-
-1. Fork the repository
-2. Create a feature branch
-3. Add your changes
-4. Submit a pull request
-
-Key areas for contribution:
-- Adding support for more component patterns in the Circuit Pattern Recognition system
-- Improving documentation and examples
-- Adding new features or enhancing existing ones
-- Fixing bugs and improving error handling
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
-
-## Future Development Ideas
-
-Interested in contributing? Here are some ideas for future development:
-
-1. **3D Model Visualization** - Implement tools to visualize 3D models of PCBs
-2. **PCB Review Tools** - Create annotation features for design reviews
-3. **Manufacturing File Generation** - Add support for generating Gerber files and other manufacturing outputs
-4. **Component Search** - Implement search functionality for components across KiCad libraries
-5. **BOM Enhancement** - Add supplier integration for component sourcing and pricing
-6. **Interactive Design Checks** - Develop interactive tools for checking design quality
-7. **Web UI** - Create a simple web interface for configuration and monitoring
-8. **Circuit Analysis** - Add automated circuit analysis features
-9. **Test Coverage** - Improve test coverage across the codebase
-10. **Circuit Pattern Recognition** - Expand the pattern database with more component types and circuit topologies
 
 ## License
 

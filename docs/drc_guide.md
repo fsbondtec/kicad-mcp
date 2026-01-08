@@ -72,15 +72,6 @@ This will load the `kicad://drc/history/project_path` resource, showing:
 - Comparison between first and most recent checks
 - Progress indicators
 
-### Getting Help with DRC Issues
-
-If you need help understanding or fixing DRC violations, use the "Fix DRC Violations" prompt template:
-
-1. Click on the prompt templates button in Claude Desktop
-2. Select "Fix DRC Violations"
-3. Fill in the specifics about your DRC issues
-4. Claude will provide guidance on resolving the violations
-
 ## Understanding DRC Results
 
 ### Violation Categories
@@ -95,26 +86,6 @@ Common DRC violation categories include:
 | Drill Size | Holes are too small | Increase drill diameter, check manufacturing capabilities |
 | Silkscreen | Silkscreen conflicts with pads | Adjust silkscreen position, resize text |
 | Courtyard | Component courtyards overlap | Adjust component placement, reduce footprint sizes |
-
-### Progress Tracking
-
-The DRC history feature tracks your progress over time, helping you:
-
-- Identify if you're making progress (reducing violations)
-- Spot when new violations are introduced
-- Focus on resolving the most common issues
-- Document your design improvements
-
-## Advanced Usage
-
-### Custom Design Rules
-
-If your project has specific requirements, you can use the "Custom Design Rules" prompt template to get help creating specialized rules for:
-
-- High-voltage circuits
-- High-current paths
-- RF design constraints
-- Specialized manufacturing requirements
 
 ### Integrating with KiCad
 

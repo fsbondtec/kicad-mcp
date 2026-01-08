@@ -100,7 +100,6 @@ This guide helps you troubleshoot common issues with the KiCad MCP Server.
 
 **Symptoms:**
 - Warning messages about missing KiCad Python modules
-- Limited functionality for PCB analysis, DRC, etc.
 
 **Possible Causes and Solutions:**
 
@@ -118,28 +117,6 @@ This guide helps you troubleshoot common issues with the KiCad MCP Server.
 3. **Python Path Issues**
    - **Problem:** KiCad Python modules not in Python path
    - **Solution:** Check server logs for Python path setup errors
-
-### Unable to Open KiCad Projects
-
-**Symptoms:**
-- Error when trying to open a KiCad project
-- KiCad doesn't launch when requested
-
-**Possible Causes and Solutions:**
-
-1. **KiCad Not Found**
-   - **Problem:** KiCad executable not found
-   - **Solution:** Set the correct `KICAD_APP_PATH` in your `.env` file
-
-2. **Project Path Issues**
-   - **Problem:** Project file not found
-   - **Solution:** Double-check the path to your KiCad project file
-   - Ensure the path is an absolute path
-   - Ensure the file exists and has a `.kicad_pro` extension
-
-3. **Permission Issues**
-   - **Problem:** Insufficient permissions to launch KiCad
-   - **Solution:** Check file and application permissions
 
 ## Project Discovery Issues
 
@@ -209,22 +186,6 @@ To diagnose issues, check the server logs:
    - **Problem:** Invalid or corrupted PCB file
    - **Solution:** Verify the PCB file can be opened in KiCad
 
-### PCB Thumbnail Generation Failing
-
-**Symptoms:**
-- Unable to generate PCB thumbnails
-- Error messages about missing modules
-
-**Possible Causes and Solutions:**
-
-1. **Missing KiCad Python Modules**
-   - **Problem:** Unable to import pcbnew module
-   - **Solution:** The server will try alternative methods, but functionality may be limited
-
-2. **File Path Issues**
-   - **Problem:** PCB file not found
-   - **Solution:** Ensure you're using absolute paths and the PCB file exists
-
 ## Environment-Specific Issues
 
 ### macOS Issues
@@ -265,9 +226,3 @@ If you're still experiencing problems:
    ```bash
    npx @modelcontextprotocol/inspector uv --directory . run main.py
    ```
-
-2. Open an issue on GitHub with:
-   - A clear description of the problem
-   - Steps to reproduce
-   - Error messages or logs
-   - Your environment details (OS, Python version, KiCad version)

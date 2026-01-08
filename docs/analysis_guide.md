@@ -1,25 +1,27 @@
-# KiCad PCB Design Analysis Guide
+# KiCad Schematic Analysis Guide
 
-This guide explains how to use the PCB design analysis features in the KiCad MCP Server.
+This guide explains how to use the Schematic design analysis features in the KiCad MCP Server.
 
 ## Overview
 
-The PCB design analysis functionality allows you to:
+The Schematic design analysis functionality allows you to:
 
 1. Extract and analyze information from schematics
 2. Validate projects for completeness and correctness
 3. Get insights about components and connections
-4. Understand PCB layout characteristics
+4. Find neighbors to a chosen Radius of components
+5. Find Paths between Components including Power Paths or excludin Power Paths
+
+- the first time the graph is built and information is read it can take a while after that Graph Information is cached and requests are faster
 
 ## Quick Reference
 
 | Task | Example Prompt |
 |------|---------------|
 | Get schematic info | `What components are in my schematic at /path/to/project.kicad_sch?` |
-| Validate project | `Validate my KiCad project at /path/to/project.kicad_pro` |
-| Analyze PCB | `Analyze the PCB layout at /path/to/project.kicad_pcb` |
+| Analyze PCB | `Analyze the Schematic layout at /path/to/project.kicad_pcb` |
 
-## Using PCB Analysis Features
+## Using Schematic Analysis Features
 
 ### Schematic Information
 
@@ -35,49 +37,15 @@ This will provide:
 - Connection information
 - Basic schematic structure
 
-Example output:
 ```
-# Schematic: my_project.kicad_sch
-
-## Components (Estimated Count: 42)
-
-(symbol (lib_id "Device:R") (at 127 87.63 0) (unit 1)
-(symbol (lib_id "Device:C") (at 142.24 90.17 0) (unit 1)
-(symbol (lib_id "MCU_Microchip_ATmega:ATmega328P-PU") (at 170.18 88.9 0) (unit 1)
-
-... and 39 more components
+Analyze the main component in more detail.
 ```
 
-### Project Validation
+This will provide:
+- A list of all neighbors of the component to a certain depth 
+- component values and references
+- Connection information
 
-To check a project for issues:
-
-```
-Validate my KiCad project at /path/to/project.kicad_pro
-```
-
-The validation checks for:
-- Missing project files
-- Required components (schematic, PCB)
-- Valid file formats
-- Common structural issues
-
-This is useful for identifying problems before opening files in KiCad.
-
-### PCB Layout Analysis
-
-To analyze a PCB layout:
-
-```
-Analyze the PCB layout at /path/to/project.kicad_pcb
-```
-
-This will provide information about:
-- Board dimensions
-- Layer structure
-- Component placement
-- Trace characteristics
-- Via usage
 
 ## Available Resources
 
@@ -102,14 +70,7 @@ What are all the resistor values in my schematic at /path/to/project.kicad_sch?
 Show me all the power connections in my schematic at /path/to/project.kicad_sch
 ```
 
-### Integration with Other Features
-
-Combine analysis with other features for better insights:
-
-1. Analyze a schematic first to understand component selection
-2. Check the BOM for component availability and cost
-3. Run DRC checks to find design rule violations
-4. View the PCB thumbnail for a visual overview
+- sometimes if very general questions are asked Claude uses DRC and to analyse the circuit if that is the case just deactivate DRC Tool
 
 ## Common Analysis Tasks
 
@@ -133,17 +94,6 @@ Trace the clock signal path in my schematic at /path/to/project.kicad_sch
 
 This helps with understanding signal flow and potential issues.
 
-### Board Metrics
-
-To get metrics about your PCB:
-
-```
-What are the dimensions of my PCB at /path/to/project.kicad_pcb?
-```
-
-```
-How many vias are in my PCB at /path/to/project.kicad_pcb?
-```
 
 ## Troubleshooting
 
@@ -156,14 +106,6 @@ If the server can't read your schematic:
 3. Ensure you have read permissions for the file
 4. Try the analysis on a simpler schematic to isolate the issue
 
-### PCB Analysis Issues
-
-If PCB analysis fails:
-
-1. Check if the PCB file exists and has the correct extension (.kicad_pcb)
-2. Ensure the PCB file is not corrupted
-3. Check for complex features that might cause parsing issues
-4. Try a simplified PCB to isolate the problem
 
 ## Advanced Usage
 
@@ -174,34 +116,3 @@ Use the analysis features for comprehensive design reviews:
 ```
 Review the power distribution network in my schematic at /path/to/project.kicad_sch
 ```
-
-```
-Check my PCB at /path/to/project.kicad_pcb for potential EMI issues
-```
-
-### Custom Analysis Scripts
-
-For advanced users:
-
-1. Use the schematic and PCB analysis tools to extract data
-2. Ask for specific analytical insights on that data
-3. Request recommendations based on the analysis
-
-## Limitations
-
-The current analysis capabilities have some limitations:
-
-1. **Complexity limits**: Very large or complex designs may not be fully analyzed
-2. **KiCad version compatibility**: Best results with the same KiCad version as the server
-3. **Limited semantic understanding**: The analysis is primarily structural rather than functional
-4. **No simulation capabilities**: The server cannot perform electrical simulation
-
-## Future Improvements
-
-Future versions of the KiCad MCP Server aim to enhance the analysis capabilities with:
-
-1. More detailed component information extraction
-2. Better understanding of circuit functionality
-3. Enhanced power and signal analysis
-4. Integration with KiCad's ERC and DRC engines
-5. Support for hierarchical schematics
