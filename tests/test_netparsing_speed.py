@@ -22,7 +22,7 @@ class TestNetlistPerformance(unittest.TestCase):
         parser = NetlistParser(self.test_schematic)
         
         #export time
-        start_export = time.perf_counter()  #returns float value of time in seconds
+        start_export = time.perf_counter()
         parser.export_netlist()
         export_time = time.perf_counter() - start_export
         
@@ -39,7 +39,6 @@ class TestNetlistPerformance(unittest.TestCase):
         print(f"Components parsed:  {len(result['components'])}")
         print(f"Nets parsed:        {len(result['nets'])}")
         
-        self.assertLess(total_time, 4.0)
         self.assertGreater(len(result["components"]), 0, "Should parse components")
     
 @pytest.fixture

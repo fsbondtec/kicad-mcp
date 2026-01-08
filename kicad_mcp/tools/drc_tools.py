@@ -2,7 +2,6 @@
 Design Rule Check (DRC) tools for KiCad PCB files.
 """
 import os
-# import logging # <-- Remove if no other logging exists
 from typing import Dict, Any
 from mcp.server.fastmcp import FastMCP, Context
 
@@ -99,13 +98,10 @@ def register_drc_tools(mcp: FastMCP) -> None:
         print("Using kicad-cli for DRC")
         if ctx:
             ctx.info("Using KiCad CLI for DRC check...")
-        # logging.info(f"[DRC] Calling run_drc_via_cli for {pcb_file}") # <-- Remove log
         drc_results = await run_drc_via_cli(pcb_file, ctx)
-        # logging.info(f"[DRC] run_drc_via_cli finished for {pcb_file}") # <-- Remove log
         
         # Process and save results if successful
         if drc_results and drc_results.get("success", False):
-            # logging.info(f"[DRC] DRC check successful for {pcb_file}. Saving results.") # <-- Remove log
             # Save results to history
             save_drc_result(project_path, drc_results)
             
@@ -122,11 +118,9 @@ def register_drc_tools(mcp: FastMCP) -> None:
                     else:
                         ctx.info(f"No change in the number of DRC violations since the last check.")
         elif drc_results:
-             # logging.warning(f"[DRC] DRC check reported failure for {pcb_file}: {drc_results.get('error')}") # <-- Remove log
              # Pass or print a warning if needed
              pass 
         else:
-            # logging.error(f"[DRC] DRC check returned None for {pcb_file}") # <-- Remove log
             # Pass or print an error if needed
             pass
         

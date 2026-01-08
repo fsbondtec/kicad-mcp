@@ -286,43 +286,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 ctx.info(f"Error finding circuit path: {str(e)}")
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
         
-    @mcp.tool()
-    async def parse_netlist(schematic_path: str, ctx: Context | None) -> Dict[str, Any]:
-        """Parse a KiCad schematic and return a basic netlist summary.
-        
-        Args:
-            schematic_path: Path to the KiCad schematic file (.kicad_sch)
-            ctx: MCP context for progress reporting
-            
-        Returns:
-            Dictionary with basic component and net counts
-        """
-        try:
-            if not schematic_path.endswith('.kicad_sch'):
-                return {"success": False, "error": "Invalid file type. Expected .kicad_sch file"}
-            
-            if not os.path.exists(schematic_path):
-                return {"success": False, "error": f"Schematic file not found: {schematic_path}"}
-            
-            parser = NetlistParser(schematic_path)
-            parser.export_netlist()
-            structured_data = parser.structure_data()
-            
-            if not structured_data:
-                return {"success": False, "error": "Failed to structure netlist data"}
-            
-            components = structured_data.get('components', {})
-            nets = structured_data.get('nets', {})
-            
-            return {
-                "success": True,
-                "total_components": len(components),
-                "total_nets": len(nets),
-                "components": list(components.keys())
-            }
-            
-        except Exception as e:
-            return {"success": False, "error": str(e)}
         
     @mcp.tool()
     async def highlight_path(project_path: str, schematic_path: str, path_nets: list, layer: str | None, ctx: Context | None) -> Dict[str, Any]:
