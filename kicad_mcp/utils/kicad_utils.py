@@ -9,9 +9,6 @@ from typing import Dict, List, Any
 
 from kicad_mcp import config
 
-# Get PID for logging - Removed, handled by logging config
-# _PID = os.getpid()
-
 def find_kicad_projects() -> List[Dict[str, Any]]:
     """Find KiCad projects in the user's directory.
     
