@@ -10,7 +10,7 @@ from kicad_mcp.utils.file_utils import get_project_files
 from kicad_mcp.utils.drc_history import save_drc_result, get_drc_history, compare_with_previous
 
 # Import implementations
-from kicad_mcp.tools.cli_drc import run_drc_via_cli
+from kicad_mcp.utils.cli_drc import run_drc_via_cli
 
 def register_drc_tools(mcp: FastMCP) -> None:
     """Register DRC tools with the MCP server.
