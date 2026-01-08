@@ -9,9 +9,6 @@ import os # Added for PID
 
 from mcp.server.fastmcp import FastMCP
 
-# Get PID for logging
-# _PID = os.getpid()
-
 @dataclass
 class KiCadAppContext:
     """Type-safe context for KiCad MCP server."""

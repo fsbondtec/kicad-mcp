@@ -48,8 +48,6 @@ elif system == "Windows":
     #Edit
     KICAD_USER_DIR = "C:/Users/{user}/KiCad/9.0/projects"
     KICAD_APP_PATH = "C:/Program Files/KiCad/9.0/"
-    KICAD_TABLE_PATH = os.path.join(os.getenv('APPDATA'), 'kicad')
-    DATASHEET_PATH = os.path.join(os.getenv('USERPROFILE'), 'KiCadProjects')
     
 elif system == "Linux":
     KICAD_USER_DIR = os.path.expanduser("~/KiCad")
