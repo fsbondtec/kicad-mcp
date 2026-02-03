@@ -111,6 +111,11 @@ Replace `/ABSOLUTE/PATH/TO/YOUR/PROJECT/kicad-mcp` with the actual path to your 
 
 Close and reopen your MCP client to load the new configuration.
 
+### 5. KiCad API
+
+To use the Highlight Tools KiCad API needs to be activated in KiCad:
+- open Project -> Settings -> Plugins -> tick activate KiCad API -> OK
+
 ## Understanding MCP Components
 
 The Model Context Protocol (MCP) defines three primary ways to provide capabilities:
