@@ -36,32 +36,20 @@ First, let's install dependencies and set up our environment:
 git clone https://github.com/fsbondtec/kicad-mcp.git
 cd kicad-mcp
 
-# Install dependencies – `uv` will create a `.venv/` folder automatically
-# (Install `uv` first: `brew install uv` on macOS or `pip install uv`)
-```bash
-uv sync --group dev
+# Create the environment from environment.yml
+conda env create -f environment.yml
 
-#run all tests
-uv run pytest tests/ -v
+# Activate the environment
+conda activate kicad-mcp
 
-#run specific test
-uv run pytest tests/test_example.py -v
+#Install package in editable mode
+pip install -e .
 
-#Linting
-uv run ruff check kicad_mcp/ tests/
-uv run mypy kicad_mcp/
+# Run all tests
+pytest tests/ -v
 
-#Format Code
-uv run ruff format kicad_mcp/ tests/
-
-#Build:
-uv build
-
-#try to run the server:
-uv run python main.py
-
-# Optional: activate the environment for manual commands
-source .venv/bin/activate
+# run server
+kicad-mcp
 ```
 
 ### 2. Configure Your Environment
@@ -108,7 +96,7 @@ Or change with Claude Desktop under:
 {
     "mcpServers": {
         "kicad": {
-            "command": "/ABSOLUTE/PATH/TO/YOUR/PROJECT/kicad-mcp/.venv/bin/python",
+            "command": "C:/Users/{user}/AppData/Local/miniconda3/envs/kicad-mcp/python.exe",
             "args": [
                 "/ABSOLUTE/PATH/TO/YOUR/PROJECT/kicad-mcp/main.py"
             ]
