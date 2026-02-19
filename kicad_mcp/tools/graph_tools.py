@@ -276,6 +276,200 @@ def register_graph_tools(mcp: FastMCP) -> None:
             if ctx:
                 ctx.info(f"Error finding circuit path: {str(e)}")
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
+    
+    @mcp.tool()
+    async def get_circuit_path_with_wires(
+        project_path: str,
+        schematic_path: str,
+        start_component: str,
+        end_component: str,
+        max_depth: int,
+        ignore_power: bool,
+        ctx: Context | None,
+    ) -> Dict:
+        """Find the shortest path between two components with wire segment details.
+
+        This tool analyzes the circuit netlist and finds the connection path
+        between two specified components, including the physical wire segments
+        that connect them in the schematic.
+
+        Args:
+            project_path: Path to the KiCad project file (.kicad_pro)
+            schematic_path: Path to the KiCad schematic file (.kicad_sch)
+            start_component: Starting component reference (e.g., "R1")
+            end_component: Ending component reference (e.g., "U3")
+            max_depth: Maximum number of components in the path
+            ignore_power: If true, ignore power connections in path finding
+            ctx: MCP context for progress reporting
+
+        Returns:
+            Dictionary with path information including wire segments or error message
+        """
+
+        if not os.path.exists(project_path):
+            if ctx:
+                ctx.info(f"Project not found: {project_path}")
+            return {"success": False, "error": f"Project not found: {project_path}"}
+
+        if not os.path.exists(schematic_path):
+            if ctx:
+                ctx.info(f"Schematic not found: {schematic_path}")
+            return {"success": False, "error": f"Schematic not found: {schematic_path}"}
+
+        if not start_component or not start_component.strip():
+            if ctx:
+                ctx.info("Start component reference is empty")
+            return {"success": False, "error": "Start component reference cannot be empty"}
+
+        if not end_component or not end_component.strip():
+            if ctx:
+                ctx.info("End component reference is empty")
+            return {"success": False, "error": "End component reference cannot be empty"}
+
+        try:
+            if ctx:
+                await ctx.report_progress(20, 100)
+                ctx.info(f"Loading circuit data from {project_path}...")
+
+            graph, _ = get_data(project_path, schematic_path)
+
+            if ctx:
+                await ctx.report_progress(60, 100)
+                ctx.info(f"Finding path with wire segments from {start_component} to {end_component}...")
+
+            # Find path with wire segments
+            path_result = graph.find_path_with_wire_segments(
+                start=start_component,
+                end=end_component,
+                ignore_power=ignore_power,
+                max_depth=max_depth
+            )
+
+            if ctx:
+                await ctx.report_progress(100, 100)
+
+            if not path_result.get("success"):
+                if ctx:
+                    ctx.info(f"No path found between {start_component} and {end_component}")
+                return {
+                    "success": False,
+                    "error": f"No path found between {start_component} and {end_component}",
+                    "start_component": start_component,
+                    "end_component": end_component,
+                }
+
+            #format for output 
+            wire_segments_formatted = []
+            for segment in path_result.get("wire_segments", []):
+                if isinstance(segment, dict):
+                    # Component hop
+                    comp_ref = segment['component']
+                    from_pin = segment['from_pin']
+                    to_pin = segment['to_pin']
+                    
+                    # Get pin positions
+                    from_pos = None
+                    to_pos = None
+                    if comp_ref in graph.wire_graph.component_pins:
+                        pins = graph.wire_graph.component_pins[comp_ref]
+                        from_pos = pins.get(from_pin)
+                        to_pos = pins.get(to_pin)
+                    
+                    wire_segments_formatted.append({
+                        "type": "component_hop",
+                        "component": comp_ref,
+                        "from_pin": from_pin,
+                        "to_pin": to_pin,
+                        "from_position": {"x": from_pos[0], "y": from_pos[1]} if from_pos else None,
+                        "to_position": {"x": to_pos[0], "y": to_pos[1]} if to_pos else None,
+                        "net": segment.get('net')
+                    })
+                else:
+                    # Wire segment
+                    start = segment.start
+                    end = segment.end
+                    
+                    def format_node(node):
+                        """Format node for output"""
+                        if isinstance(node, tuple):
+                            if len(node) == 2:
+                                if isinstance(node[0], str):
+                                    # Pin node: (comp_ref, pin_num)
+                                    comp_ref, pin_num = node
+                                    pos = None
+                                    if comp_ref in graph.wire_graph.component_pins:
+                                        pos = graph.wire_graph.component_pins[comp_ref].get(pin_num)
+                                    return {
+                                        "type": "pin",
+                                        "component": comp_ref,
+                                        "pin": pin_num,
+                                        "position": {"x": pos[0], "y": pos[1]} if pos else None
+                                    }
+                                else:
+                                    # Junction node: (x, y)
+                                    return {
+                                        "type": "junction",
+                                        "position": {"x": node[0], "y": node[1]}
+                                    }
+                        return {"type": "unknown", "value": str(node)}
+                    
+                    wire_segments_formatted.append({
+                        "type": "wire",
+                        "id": segment.id,
+                        "start": format_node(start),
+                        "end": format_node(end)
+                    })
+
+            if ctx:
+                num_wires = sum(1 for s in wire_segments_formatted if s["type"] == "wire")
+                num_hops = sum(1 for s in wire_segments_formatted if s["type"] == "component_hop")
+                ctx.info(f"Path found with {path_result.get('path_length', 0)} components, "
+                        f"{num_wires} wire segments, and {num_hops} component hops")
+
+            return {
+                "success": True,
+                "project_path": project_path,
+                "schematic_path": schematic_path,
+                "start_component": start_component,
+                "end_component": end_component,
+                "max_depth": max_depth,
+                "ignore_power": ignore_power,
+                "path": path_result.get("path", []),
+                "path_length": path_result.get("path_length", 0),
+                "component_details": path_result.get("component_details", []),
+                "nets": [net.get("ref") for net in path_result.get("nets", [])],
+                "wire_segments": wire_segments_formatted,
+                "wire_segment_count": len(wire_segments_formatted),
+                "wire_count": sum(1 for s in wire_segments_formatted if s["type"] == "wire"),
+                "component_hop_count": sum(1 for s in wire_segments_formatted if s["type"] == "component_hop")
+            }
+
+        except FileNotFoundError as e:
+            if ctx:
+                ctx.info(f"File not found: {str(e)}")
+            return {"success": False, "error": f"File not found: {str(e)}"}
+
+        except ValueError as e:
+            if ctx:
+                ctx.info(f"Invalid data encountered: {str(e)}")
+            return {"success": False, "error": f"Invalid data: {str(e)}"}
+
+        except KeyError as e:
+            if ctx:
+                ctx.info(f"Missing required data: {str(e)}")
+            return {"success": False, "error": f"Missing required data: {str(e)}"}
+
+        except Exception as e:
+            if ctx:
+                ctx.error(f"Error finding circuit path with wires: {str(e)}")
+            import traceback
+            return {
+                "success": False,
+                "error": f"Error finding circuit path with wires: {str(e)}",
+                "traceback": traceback.format_exc()
+            }
+
+
 
     @mcp.tool()
     async def highlight_path(
