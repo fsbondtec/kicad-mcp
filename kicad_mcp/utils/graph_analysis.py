@@ -523,6 +523,8 @@ class CircuitGraph:
 
                 self.edges[edge_key]["pins"].append(pin_num)
 
+    ######################### Methods for Wire Graph #########################
+
     def _build_wire_graph(self):
         """Parse Wire-Segmente und Komponenten-Pins aus Schematics"""
         
@@ -581,7 +583,7 @@ class CircuitGraph:
         for symbol in sch.schematicSymbols:
             for instance in symbol.instances:
                 for path in instance.paths:
-                    comp_ref = path
+                    comp_ref = path.reference
                     
             
             if comp_ref is None:
@@ -610,7 +612,6 @@ class CircuitGraph:
                     pin_positions[pin_num] = absolute_pos
                 
             #add pins to wire graph
-            comp_ref = str(comp_ref)
             self.wire_graph.add_component_pins(comp_ref, pin_positions)
 
 
@@ -640,7 +641,92 @@ class CircuitGraph:
         
         # if no pin was found return normal point
         return pos
+    
+    def find_path_with_wire_segments(self, start: str, end: str, 
+                                  ignore_power: bool, 
+                                  max_depth: int = 10) -> Dict[str, Any]:
+        """
+        finds logical Path + wires through that path    
 
+        Returns:
+            Dict with :
+            - success, path, path_length, component_details, nets
+            - wire_segments: list of all wire segments in the path 
+        """
+        # logic path
+        logical_result = self.find_path(start, end, ignore_power, max_depth)
+        
+        if not logical_result["success"]:
+            logical_result["wire_segments"] = []
+            return logical_result
+        
+        # wire path
+        path = logical_result["path"]
+        all_wire_segments = []
+        
+        i = 0
+        while i < len(path):
+            node = path[i]
+            
+            # net -> get next component
+            if self.nodes[node]["type"] != "component":
+                i += 1
+                continue
+            
+            comp_a = node
+            
+            next_comp = None
+            net_between = None
+            
+            for j in range(i + 1, len(path)):
+                if self.nodes[path[j]]["type"] == "net":
+                    net_between = path[j]
+                elif self.nodes[path[j]]["type"] == "component":
+                    next_comp = path[j]
+                    break
+            
+            if next_comp is None or net_between is None:
+                i += 1
+                continue
+            
+            comp_b = next_comp
+            
+            # get pins for component connections
+            pin_a = self.get_pin_for_connection(comp_a, net_between)
+            pin_b = self.get_pin_for_connection(comp_b, net_between)
+            
+            if pin_a and pin_b:
+                wire_path = self.wire_graph.find_wire_path(comp_a, pin_a, comp_b, pin_b)
+                
+                if wire_path:
+                    all_wire_segments.extend(wire_path)
+                    print(f"Found {len(wire_path)} wire segments: {comp_a}.{pin_a},  {comp_b}.{pin_b}")
+                else:
+                    print(f"No wire path: {comp_a}.{pin_a}, {comp_b}.{pin_b}")
+            
+            i += 1
+        
+        logical_result["wire_segments"] = all_wire_segments
+        
+        return logical_result
+
+
+    def get_pin_for_connection(self, component_ref: str, net_name: str) -> Optional[str]:
+        """get a pin number that connects the net with component"""
+        
+        edge_key = (component_ref, net_name)
+        
+        if edge_key not in self.edges:
+            return None
+        
+        pins = self.edges[edge_key].get("pins", [])
+        
+        if pins:
+            return pins[0]  #return the first pin (find better solution because there can be multiple pins)
+        
+        return None
+    
+        ###################################################################
 
 
     def get_pin_electrical_type(self, component_ref: str, pin_num: str, net_name: str) -> str:
