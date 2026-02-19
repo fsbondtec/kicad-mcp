@@ -94,22 +94,22 @@ class GlobalWireGraph:
             if self.is_pin_node(current):
                 comp_ref, current_pin = current
             
-            if comp_ref in self.component_pins:
-                    for other_pin in self.component_pins[comp_ref].keys():
-                        if other_pin == current_pin:
-                            continue
-                            
-                        other_node = (comp_ref, other_pin)
+                if comp_ref in self.component_pins:
+                        for other_pin in self.component_pins[comp_ref].keys():
+                            if other_pin == current_pin:
+                                continue
+                                
+                            other_node = (comp_ref, other_pin)
 
-                        #just look at the other pin if other pin is valid 
-                        if other_node in self.adjacency and other_node not in visited:
-                            hop = {
-                                'type': 'component_hop',
-                                'component': comp_ref,
-                                'from_pin': current_pin,
-                                'to_pin': other_pin
-                            }
-                            queue.append((other_node, path + [hop]))
+                            #just look at the other pin if other pin is valid 
+                            if other_node in self.adjacency and other_node not in visited:
+                                hop = {
+                                    'type': 'component_hop',
+                                    'component': comp_ref,
+                                    'from_pin': current_pin,
+                                    'to_pin': other_pin
+                                }
+                                queue.append((other_node, path + [hop]))
         
         return None
     
@@ -121,16 +121,5 @@ class GlobalWireGraph:
         """compare nodes"""
         return WireSegment.nodes_equal(n1, n2, self.tolerance)
 
-                
-    @staticmethod
-    def nodes_equal(n1: NodeType, n2: NodeType, tol=0.01) -> bool:
-        # Pin-Knoten
-        if len(n1) == 4 and len(n2) == 4:
-            return n1[0] == n2[0] and n1[1] == n2[1]
-        
-        # Junction
-        if len(n1) == 2 and len(n2) == 2:
-            return abs(n1[0] - n2[0]) < tol and abs(n1[1] - n2[1]) < tol
-        
-        return False
+            
     
