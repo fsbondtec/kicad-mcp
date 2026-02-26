@@ -57,62 +57,54 @@ class GlobalWireGraph:
     def add_component_pins(self, comp_ref: str, pins: Dict[str, Tuple[float, float]]):
         """match pins with component"""
         self.component_pins[comp_ref] = pins
+
+    def find_wire_path_between_components(self, comp_a: str, comp_b: str, allowed_components: set = None) -> Optional[List]:
+        """BFS von allen Pins von comp_a bis irgendeinen Pin von comp_b"""
         
-    
-    def find_wire_path(self, comp_a: str, pin_a: str, comp_b: str, pin_b: str) -> Optional[List]:
-        """find wire path between two component pins"""
+        if comp_a not in self.component_pins or comp_b not in self.component_pins:
+            return None
         
-        start_node = (comp_a, pin_a)
-        end_node = (comp_b, pin_b)
+        target_pins = {(comp_b, pin) for pin in self.component_pins[comp_b]}
         
-        return self.wire_bfs(start_node, end_node)
-    
-    def wire_bfs(self, start_node: NodeType, end_node: NodeType) -> Optional[List]:
-        """BFS"""
-        
-        queue = deque([(start_node, [])])
+        queue = deque()
         visited = set()
+        
+        for pin_num in self.component_pins[comp_a]:
+            start = (comp_a, pin_num)
+            queue.append((start, []))
+            visited.add(start)
         
         while queue:
             current, path = queue.popleft()
             
-            if current in visited:
-                continue
-            visited.add(current)
-            
-            #finished
-            if self.nodes_equal(current, end_node):
+            if current in target_pins:
                 return path
             
-            #follow wire segments through the graph
-            for wire_segment in self.adjacency.get(current, []):
-                next_node = wire_segment.get_other_end(current, self.tolerance)
+            for segment in self.adjacency.get(current, []):
+                next_node = segment.get_other_end(current)
                 if next_node and next_node not in visited:
-                    queue.append((next_node, path + [wire_segment]))
-
-            #pin to pin connection in component
-            if self.is_pin_node(current):
-                comp_ref, current_pin = current
+                    visited.add(next_node)
+                    queue.append((next_node, path + [segment]))
             
-                if comp_ref in self.component_pins:
-                        for other_pin in self.component_pins[comp_ref].keys():
-                            if other_pin == current_pin:
-                                continue
-                                
-                            other_node = (comp_ref, other_pin)
+            if isinstance(current, tuple) and isinstance(current[0], str):
+                comp_ref, pin_num = current
 
-                            #just look at the other pin if other pin is valid 
-                            if other_node in self.adjacency and other_node not in visited:
-                                hop = {
-                                    'type': 'component_hop',
-                                    'component': comp_ref,
-                                    'from_pin': current_pin,
-                                    'to_pin': other_pin
-                                }
+                 # only Hop when component in logic Path
+                if allowed_components is not None and comp_ref not in allowed_components:
+                    continue
+                
+                if comp_ref in self.component_pins:
+                    for other_pin in self.component_pins[comp_ref]:
+                        if other_pin != pin_num:
+                            other_node = (comp_ref, other_pin)
+                            if other_node not in visited and other_node in self.adjacency:
+                                visited.add(other_node)
+                                hop = {'type': 'component_hop', 'component': comp_ref,
+                                    'from_pin': pin_num, 'to_pin': other_pin}
                                 queue.append((other_node, path + [hop]))
         
         return None
-    
+
     def is_pin_node(self, node: NodeType) -> bool:
         """check if node is pin node"""
         return (isinstance(node, tuple) and len(node) == 2 and isinstance(node[0], str))
