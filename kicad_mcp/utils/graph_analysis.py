@@ -526,7 +526,7 @@ class CircuitGraph:
     ######################### Methods for Wire Graph #########################
 
     def _build_wire_graph(self):
-        """Parse Wire-Segmente und Komponenten-Pins aus Schematics"""
+        """Parse Wire segments and component pins from schematics"""
         
         files = get_project_files(self.project_path)
         
@@ -662,6 +662,9 @@ class CircuitGraph:
         
         # wire path
         path = logical_result["path"]
+
+        allowed = {n for n in path if self.nodes[n]["type"] == "component"}
+
         all_wire_segments = []
         
         i = 0
@@ -691,18 +694,14 @@ class CircuitGraph:
             
             comp_b = next_comp
             
-            # get pins for component connections
-            pin_a = self.get_pin_for_connection(comp_a, net_between)
-            pin_b = self.get_pin_for_connection(comp_b, net_between)
-            
-            if pin_a and pin_b:
-                wire_path = self.wire_graph.find_wire_path(comp_a, pin_a, comp_b, pin_b)
+            wire_path = self.wire_graph.find_wire_path_between_components(comp_a, comp_b, allowed_components=allowed)
+
                 
-                if wire_path:
-                    all_wire_segments.extend(wire_path)
-                    print(f"Found {len(wire_path)} wire segments: {comp_a}.{pin_a},  {comp_b}.{pin_b}")
-                else:
-                    print(f"No wire path: {comp_a}.{pin_a}, {comp_b}.{pin_b}")
+            if wire_path:
+                all_wire_segments.extend(wire_path)
+                print(f"Found {len(wire_path)} wire segments: {comp_a} → {comp_b}")
+            else:
+                print(f"No wire path: {comp_a} → {comp_b}")
             
             i += 1
         
