@@ -1,4 +1,5 @@
 import os
+import math
 from collections import defaultdict, deque
 from typing import Any, Dict, List
 import subprocess
@@ -585,11 +586,14 @@ class CircuitGraph:
                 for path in instance.paths:
                     comp_ref = path.reference
                     
+                    
             
             if comp_ref is None:
                 continue
 
             comp_pos = (symbol.position.X, symbol.position.Y)
+            angle_deg = symbol.position.angle or 0
+            angle_rad = math.radians(angle_deg)
             
             # find library symbol for this symbolS
             lib_symbol = self.find_lib_symbol(sch, symbol.entryName)
@@ -600,13 +604,24 @@ class CircuitGraph:
             pin_positions = {}
             for unit in lib_symbol.units:
                 for pin in unit.pins:
+                    print(unit)
                     pin_num = pin.number
                     pin_offset = (pin.position.X, pin.position.Y)
+
+                    rotated_x = (
+                    pin_offset[0] * math.cos(angle_rad)
+                    - pin_offset[1] * math.sin(angle_rad)
+                    )
+
+                    rotated_y = (
+                        pin_offset[0] * math.sin(angle_rad)
+                        + pin_offset[1] * math.cos(angle_rad)
+                    )
                     
                     # calculate offset without rotation
                     absolute_pos = (
-                        comp_pos[0] + pin_offset[0],
-                        comp_pos[1] + pin_offset[1]
+                        comp_pos[0] + rotated_x,
+                        comp_pos[1] + rotated_y
                     )
                     
                     pin_positions[pin_num] = absolute_pos
@@ -699,9 +714,9 @@ class CircuitGraph:
                 
             if wire_path:
                 all_wire_segments.extend(wire_path)
-                print(f"Found {len(wire_path)} wire segments: {comp_a} → {comp_b}")
+                print(f"Found {len(wire_path)} wire segments: {comp_a}.{comp_b}")
             else:
-                print(f"No wire path: {comp_a} → {comp_b}")
+                print(f"No wire path: {comp_a}.{comp_b}")
             
             i += 1
         
