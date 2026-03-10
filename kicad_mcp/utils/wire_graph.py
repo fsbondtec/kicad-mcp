@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 import math
-from typing import Tuple, Union, List, Optional, Dict, Any
+from typing import Tuple, Union, List, Optional, Dict
 from collections import defaultdict, deque
+import sys
 
 from kiutils.schematic import Schematic
 from kiutils.items.schitems import Connection
@@ -70,9 +71,10 @@ class GlobalWireGraph:
         self.segments.append(seg)
         self.adjacency[start].append(seg)
         self.adjacency[end].append(seg)
+        
 
-    def add_wire(self, start: NodeType, end: NodeType, wire_id: str):
-        self._add_wire(start, end, wire_id)
+    def add_wire(self, start: NodeType, end: NodeType, wire_id: str, sheet: str = ""):
+        self._add_wire(start, end, wire_id, sheet)
 
 
     def add_component_pins(self, comp_ref: str, pins: Dict[str, Tuple[float, float]]):
@@ -135,7 +137,7 @@ class GlobalWireGraph:
         return WireSegment.nodes_equal(n1, n2, self.tolerance)
     
     def build_from_project(self, project_path: str):
-        files = get_project_files(self.project_path)
+        files = get_project_files(project_path)
         
         if "schematic" not in files:
             return set()
@@ -153,7 +155,7 @@ class GlobalWireGraph:
                 wire_id = self.parse_sheet(sch, sch_path, wire_id)
                                             
             except Exception as e:
-                print(f"Error parsing {sch_path}: {e}")
+                print(f"Error parsing {sch_path}: {e}", file=sys.stderr)
                 import traceback
                 traceback.print_exc()
 
@@ -183,7 +185,8 @@ class GlobalWireGraph:
                     self.add_wire(
                         start=start_node,
                         end=end_node,
-                        wire_id=f"wire_{wire_id}"
+                        wire_id=f"wire_{wire_id}",
+                        sheet = sch_path
                     )
             
                     wire_id += 1
@@ -258,7 +261,6 @@ class GlobalWireGraph:
             pin_positions = {}
             for unit in lib_symbol.units:
                 for pin in unit.pins:
-                    print(unit)
                     pin_num = pin.number
                     pin_offset = (pin.position.X, pin.position.Y)
 
