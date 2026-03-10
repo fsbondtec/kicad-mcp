@@ -9,6 +9,9 @@ import hashlib
 
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
+from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files
+from kicad_mcp.utils.file_utils import get_project_files
+
 
 project_cache: Dict[str, Dict[str, Any]] = {}
 highlight_cache = {}  # cache for all highlighted KIIDs
@@ -286,6 +289,9 @@ def register_graph_tools(mcp: FastMCP) -> None:
         max_depth: int,
         ignore_power: bool,
         ctx: Context | None,
+        draw_svg: bool = True,
+        svg_stroke_color: str = "#FF4400",
+        svg_stroke_width: float = 0.4,
     ) -> Dict:
         """Find the shortest path between two components with wire segment details.
 
@@ -358,92 +364,65 @@ def register_graph_tools(mcp: FastMCP) -> None:
                     "end_component": end_component,
                 }
 
-            #format for output 
-            wire_segments_formatted = []
-            for segment in path_result.get("wire_segments", []):
-                if isinstance(segment, dict):
-                    # Component hop
-                    comp_ref = segment['component']
-                    from_pin = segment['from_pin']
-                    to_pin = segment['to_pin']
-                    
-                    # Get pin positions
-                    from_pos = None
-                    to_pos = None
-                    if comp_ref in graph.wire_graph.component_pins:
-                        pins = graph.wire_graph.component_pins[comp_ref]
-                        from_pos = pins.get(from_pin)
-                        to_pos = pins.get(to_pin)
-                    
-                    wire_segments_formatted.append({
-                        "type": "component_hop",
-                        "component": comp_ref,
-                        "from_pin": from_pin,
-                        "to_pin": to_pin,
-                        "from_position": {"x": from_pos[0], "y": from_pos[1]} if from_pos else None,
-                        "to_position": {"x": to_pos[0], "y": to_pos[1]} if to_pos else None,
-                        "net": segment.get('net')
-                    })
-                else:
-                    # Wire segment
-                    start = segment.start
-                    end = segment.end
-                    
-                    def format_node(node):
-                        """Format node for output"""
-                        if isinstance(node, tuple):
-                            if len(node) == 2:
-                                if isinstance(node[0], str):
-                                    # Pin node: (comp_ref, pin_num)
-                                    comp_ref, pin_num = node
-                                    pos = None
-                                    if comp_ref in graph.wire_graph.component_pins:
-                                        pos = graph.wire_graph.component_pins[comp_ref].get(pin_num)
-                                    return {
-                                        "type": "pin",
-                                        "component": comp_ref,
-                                        "pin": pin_num,
-                                        "position": {"x": pos[0], "y": pos[1]} if pos else None
-                                    }
-                                else:
-                                    # Junction node: (x, y)
-                                    return {
-                                        "type": "junction",
-                                        "position": {"x": node[0], "y": node[1]}
-                                    }
-                        return {"type": "unknown", "value": str(node)}
-                    
-                    wire_segments_formatted.append({
-                        "type": "wire",
-                        "id": segment.id,
-                        "start": format_node(start),
-                        "end": format_node(end)
-                    })
-
+            wire_segments_formatted = path_result.get("wire_segments_formatted", [])
+            
             if ctx:
                 num_wires = sum(1 for s in wire_segments_formatted if s["type"] == "wire")
                 num_hops = sum(1 for s in wire_segments_formatted if s["type"] == "component_hop")
                 ctx.info(f"Path found with {path_result.get('path_length', 0)} components, "
-                        f"{num_wires} wire segments, and {num_hops} component hops")
+                         f"{num_wires} wire segments, and {num_hops} component hops")
+                
+            # Svg feature 
+            svg_success = False
+            written_svg_paths = []
+            svg_errors = []
+
+            if draw_svg:
+                wire_only = [
+                    s for s in wire_segments_formatted
+                    if s["type"] == "wire" and s.get("sheet", "virtual") != "virtual"
+                ]
+
+                if wire_only:
+                    project_files = get_project_files(project_path)
+                    svg_map = build_svg_map_from_project_files(project_files)
+                    
+                    svg_result = draw_path_to_svg(
+                        wire_segments  = wire_only,
+                        project_path   = project_path,
+                        path_id_prefix = f"{start_component}_to_{end_component}",
+                        style          = {
+                            "stroke":       svg_stroke_color,
+                            "stroke_width": svg_stroke_width,
+                        },
+                        svg_map=svg_map
+                    )
+                    
+                    if svg_result:
+                        svg_success = svg_result.get("success", False)
+                        written_svg_paths = [f["svg"] for f in svg_result.get("written_files", [])]
+                        svg_errors = svg_result.get("errors", []) + [s["reason"] for s in svg_result.get("skipped_sheets", [])]
+
+                    if ctx:
+                        if svg_success:
+                            ctx.info(f"SVG overlay written to: {written_svg_paths}")
+                        else:
+                            ctx.info(f"SVG overlay skipped: {svg_errors}")
+                else:
+                    if ctx:
+                        ctx.info("No real wire segments to draw (only virtual bridges or component hops)")
 
             return {
                 "success": True,
-                "project_path": project_path,
-                "schematic_path": schematic_path,
                 "start_component": start_component,
                 "end_component": end_component,
-                "max_depth": max_depth,
-                "ignore_power": ignore_power,
                 "path": path_result.get("path", []),
                 "path_length": path_result.get("path_length", 0),
-                "component_details": path_result.get("component_details", []),
-                "nets": [net.get("ref") for net in path_result.get("nets", [])],
-                "wire_segments": wire_segments_formatted,
-                "wire_segment_count": len(wire_segments_formatted),
-                "wire_count": sum(1 for s in wire_segments_formatted if s["type"] == "wire"),
-                "component_hop_count": sum(1 for s in wire_segments_formatted if s["type"] == "component_hop")
+                "svg_drawn": svg_success,
+                "written_svg_files": written_svg_paths,
+                "errors": svg_errors
             }
-
+        
         except FileNotFoundError as e:
             if ctx:
                 ctx.info(f"File not found: {str(e)}")

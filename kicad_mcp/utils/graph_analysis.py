@@ -1,8 +1,6 @@
-import os
-import math
 from collections import defaultdict, deque
 from typing import Any, Dict, List
-import subprocess
+import sys
 
 # new Kicad API instead of pcbnew:
 from kipy import KiCad
@@ -35,9 +33,11 @@ class CircuitGraph:
         self._build_graph()
 
         #for wire graph 
-        self.wire_graph = GlobalWireGraph(tolerance=0.01)
         self._build_wire_graph()
 
+    def _build_wire_graph(self):
+        self.wire_graph = GlobalWireGraph(tolerance=0.01)
+        self.wire_graph.build_from_project(self.project_path)
 
 
     def load_powerSymbols(self):
@@ -526,137 +526,6 @@ class CircuitGraph:
 
     ######################### Methods for Wire Graph #########################
 
-    def _build_wire_graph(self):
-        """Parse Wire segments and component pins from schematics"""
-        
-        files = get_project_files(self.project_path)
-        
-        if "schematic" not in files:
-            return set()
-        
-        schematic_paths = files["schematic"]
-        if isinstance(schematic_paths, str):
-            schematic_paths = [schematic_paths]
-    
-        wire_id = 0
-        
-        for sch_path in schematic_paths:
-            try:
-                sch = Schematic.from_file(sch_path)
-                
-                # 1. parse component pins
-                self.parse_component_pins_for_wire_graph(sch)
-                
-                # 2. parse wire segments
-                for item in sch.graphicalItems:
-                    if item.type == "wire":
-                        points = item.points
-
-                        if len(points) < 2:
-                            continue
-
-                        for i in range(len(points) - 1):
-                            start_pos = (points[i].X, points[i].Y)
-                            end_pos = (points[i + 1].X, points[i + 1].Y)
-                    
-                            # find nodes on this positions
-                            start_node = self.find_node_at_position(start_pos)
-                            end_node = self.find_node_at_position(end_pos)
-                            
-                            # Füge Wire hinzu
-                            self.wire_graph.add_wire(
-                                start=start_node,
-                                end=end_node,
-                                wire_id=f"wire_{wire_id}"
-                            )
-                    
-                            wire_id += 1
-                                
-            except Exception as e:
-                print(f"Error parsing {sch_path}: {e}")
-                import traceback
-                traceback.print_exc()
-
-
-    def parse_component_pins_for_wire_graph(self, sch: Schematic):
-        """calculate the component pin positions"""
-        
-        for symbol in sch.schematicSymbols:
-            for instance in symbol.instances:
-                for path in instance.paths:
-                    comp_ref = path.reference
-                    
-                    
-            
-            if comp_ref is None:
-                continue
-
-            comp_pos = (symbol.position.X, symbol.position.Y)
-            angle_deg = symbol.position.angle or 0
-            angle_rad = math.radians(angle_deg)
-            
-            # find library symbol for this symbolS
-            lib_symbol = self.find_lib_symbol(sch, symbol.entryName)
-            
-            if lib_symbol is None:
-                continue
-            
-            pin_positions = {}
-            for unit in lib_symbol.units:
-                for pin in unit.pins:
-                    print(unit)
-                    pin_num = pin.number
-                    pin_offset = (pin.position.X, pin.position.Y)
-
-                    rotated_x = (
-                    pin_offset[0] * math.cos(angle_rad)
-                    - pin_offset[1] * math.sin(angle_rad)
-                    )
-
-                    rotated_y = (
-                        pin_offset[0] * math.sin(angle_rad)
-                        + pin_offset[1] * math.cos(angle_rad)
-                    )
-                    
-                    # calculate offset without rotation
-                    absolute_pos = (
-                        comp_pos[0] + rotated_x,
-                        comp_pos[1] + rotated_y
-                    )
-                    
-                    pin_positions[pin_num] = absolute_pos
-                
-            #add pins to wire graph
-            self.wire_graph.add_component_pins(comp_ref, pin_positions)
-
-
-    def find_lib_symbol(self, sch: Schematic, entry_name: str):
-        """find library symbol for a entry_name"""
-        for lib_sym in sch.libSymbols:
-            if lib_sym.entryName == entry_name:
-                return lib_sym
-        return None
-
-
-    def find_node_at_position(self, pos: Tuple[float, float], 
-                            tolerance: float = 0.1) -> NodeType:
-        """
-        find node at given position 
-        
-        Returns:
-            Pin-Node (comp_ref, pin_num) if position is a pin
-            Junction-Node (x, y) else
-        """
-        
-        for comp_ref, pins in self.wire_graph.component_pins.items():
-            for pin_num, pin_pos in pins.items():
-                dist = ((pin_pos[0] - pos[0])**2 + (pin_pos[1] - pos[1])**2)**0.5
-                if dist < tolerance:
-                    return (comp_ref, pin_num)
-        
-        # if no pin was found return normal point
-        return pos
-    
     def find_path_with_wire_segments(self, start: str, end: str, 
                                   ignore_power: bool, 
                                   max_depth: int = 10) -> Dict[str, Any]:
@@ -714,32 +583,73 @@ class CircuitGraph:
                 
             if wire_path:
                 all_wire_segments.extend(wire_path)
-                print(f"Found {len(wire_path)} wire segments: {comp_a}.{comp_b}")
+                print(f"Found {len(wire_path)} wire segments: {comp_a}.{comp_b}", file=sys.stderr)
             else:
-                print(f"No wire path: {comp_a}.{comp_b}")
+                print(f"No wire path: {comp_a}.{comp_b}", file=sys.stderr)
             
             i += 1
         
-        logical_result["wire_segments"] = all_wire_segments
+        #format
+        formatted_segments = []
+        for segment in all_wire_segments:
+            if isinstance(segment, dict):
+                # Component hop
+                comp_ref = segment['component']
+                from_pin = segment['from_pin']
+                to_pin = segment['to_pin']
+                
+                pins = self.wire_graph.component_pins.get(comp_ref, {})
+                from_pos = pins.get(from_pin)
+                to_pos = pins.get(to_pin)
+                
+                formatted_segments.append({
+                    "type": "component_hop",
+                    "component": comp_ref,
+                    "from_pin": from_pin,
+                    "to_pin": to_pin,
+                    "from_position": {"x": from_pos[0], "y": from_pos[1]} if from_pos else None,
+                    "to_position": {"x": to_pos[0], "y": to_pos[1]} if to_pos else None,
+                    "net": segment.get('net')
+                })
+            else:
+                # Wire segment
+                formatted_segments.append({
+                    "type": "wire",
+                    "id": segment.id,
+                    "sheet": segment.sheet,
+                    "start": self.format_node(segment.start),
+                    "end": self.format_node(segment.end)
+                })
+
+        logical_result["wire_segments_raw"] = all_wire_segments # Falls du die Rohdaten intern nochmal brauchst
+        logical_result["wire_segments_formatted"] = formatted_segments
         
         return logical_result
-
-
-    def get_pin_for_connection(self, component_ref: str, net_name: str) -> Optional[str]:
-        """get a pin number that connects the net with component"""
-        
-        edge_key = (component_ref, net_name)
-        
-        if edge_key not in self.edges:
-            return None
-        
-        pins = self.edges[edge_key].get("pins", [])
-        
-        if pins:
-            return pins[0]  #return the first pin (find better solution because there can be multiple pins)
-        
-        return None
     
+    def format_node(self, node) -> Dict[str, Any]:
+        """Format node for output (internal helper)"""
+        if isinstance(node, str):
+            return {"type": "label", "name": node}
+            
+        if isinstance(node, tuple):
+            if len(node) == 2:
+                if isinstance(node[0], str):
+                    # Pin node: (comp_ref, pin_num)
+                    comp_ref, pin_num = node
+                    pos = self.wire_graph.component_pins.get(comp_ref, {}).get(pin_num)
+                    return {
+                        "type": "pin",
+                        "component": comp_ref,
+                        "pin": pin_num,
+                        "position": {"x": pos[0], "y": pos[1]} if pos else None
+                    }
+                else:
+                    # Junction node: (x, y)
+                    return {
+                        "type": "junction",
+                        "position": {"x": node[0], "y": node[1]}
+                    }
+        return {"type": "unknown", "value": str(node)}
         ###################################################################
 
 
