@@ -16,6 +16,7 @@ from kicad_mcp.utils.file_utils import get_project_files
 
 
 
+
 import pyvips
 
 project_cache: Dict[str, Dict[str, Any]] = {}
@@ -386,15 +387,30 @@ def register_graph_tools(mcp: FastMCP) -> None:
             svg_errors = []
 
             if draw_svg:
+                # Lade hier die formatierte Liste für das Debugging
+                wire_segments_formatted = path_result.get("wire_segments_formatted", [])
+                
                 wire_only = [
                     s for s in wire_segments_formatted
                     if s["type"] == "wire" and s.get("sheet", "virtual") != "virtual"
                 ]
 
+                # Initialisiere Variablen für den Fall, dass wire_only leer ist
+                svg_success = False
+                written_svg_paths = []
+                svg_errors = []
+                debug_info = []
+
+                debug_info.append(f"draw_svg flag is True.")
+                debug_info.append(f"Total formatted segments received: {len(wire_segments_formatted)}")
+                debug_info.append(f"Filtered 'wire_only' segments (non-virtual): {len(wire_only)}")
+
                 if wire_only:
                     project_files = get_project_files(project_path)
                     svg_map = build_svg_map_from_project_files(project_files)
                     
+                    debug_info.append(f"SVG Map built with {len(svg_map)} entries.")
+
                     svg_result = draw_path_to_svg(
                         wire_segments  = wire_only,
                         project_path   = project_path,
@@ -409,41 +425,69 @@ def register_graph_tools(mcp: FastMCP) -> None:
                     if svg_result:
                         svg_success = svg_result.get("success", False)
                         written_svg_paths = [f["svg"] for f in svg_result.get("written_files", [])]
-                        svg_errors = svg_result.get("errors", []) + [s["reason"] for s in svg_result.get("skipped_sheets", [])]
+                        
+                        # Fehler und Skipped-Gründe sicher extrahieren
+                        raw_errors = svg_result.get("errors", [])
+                        skipped_sheets = svg_result.get("skipped_sheets", [])
+                        skipped_reasons = [s.get("reason", "Unknown reason") for s in skipped_sheets if isinstance(s, dict)]
+                        svg_errors = raw_errors + skipped_reasons
+
+                        debug_info.append(f"draw_path_to_svg returned success: {svg_success}")
+                        debug_info.append(f"Written SVG files count: {len(written_svg_paths)}")
+                        if svg_errors:
+                            debug_info.append(f"SVG generation errors/skips: {svg_errors}")
 
                     if ctx:
                         if svg_success:
                             ctx.info(f"SVG overlay written to: {written_svg_paths}")
                         else:
-                            ctx.info(f"SVG overlay skipped: {svg_errors}")
+                            ctx.info(f"SVG overlay skipped/failed: {svg_errors}")
                 else:
+                    debug_info.append("Skipped SVG drawing because 'wire_only' list is empty.")
                     if ctx:
                         ctx.info("No real wire segments to draw (only virtual bridges or component hops)")
             
+            # Baue den Basis-Summary-Text auf
             summary = (
                 f"Path found with {path_result.get('path_length', 0)} components.\n"
-                f"Logical Path: {' -> '.join(path_result.get('path', []))}\n" 
+                f"Logical Path: {' -> '.join(path_result.get('path', []))}\n\n"
+                f"--- Debug Info ---\n"
+                + "\n".join(debug_info) + "\n"
+                f"------------------\n"
             )
             
             if svg_success and written_svg_paths:
-                summary += "\nSVG(s) saved to:\n" + "\n".join(written_svg_paths)
+                summary += "\nSVG(s) successfully generated and saved to:\n" + "\n".join(written_svg_paths)
             
             content_list = [
                 TextContent(type="text", text=summary)
             ]
 
+            # PyVips Konvertierung und Image-Anhang
             if svg_success and written_svg_paths:
                 for svg_file_path in written_svg_paths:
-                    try:
-                        image = pyvips.Image.new_from_file(svg_file_path, dpi=75)
+                    # Prüfen, ob die Datei auf der Festplatte überhaupt existiert, bevor pyvips startet
+                    if not os.path.exists(svg_file_path):
+                        content_list.append(
+                            TextContent(type="text", text=f"File IO Error: SVG file does not exist at path: {svg_file_path}")
+                        )
+                        continue
                         
+                    try:
+                        # Logging vor PyVips Start
+                        content_list.append(TextContent(type="text", text=f"Starting pyvips conversion for: {os.path.basename(svg_file_path)}"))
+                        
+                        image = pyvips.Image.new_from_file(svg_file_path, dpi=75)
                         
                         if image.hasalpha():
                             image = image.flatten(background=[255, 255, 255]) #white background
                         
                         jpg_bytes = image.write_to_buffer(".jpg[Q=60]")
-                        
                         encoded_string = base64.b64encode(jpg_bytes).decode('utf-8')
+                        
+                        # Das Text-Label VOR das Bild hängen
+                        sheet_name = os.path.basename(svg_file_path)
+                        content_list.append(TextContent(type="text", text=f"Rendered Sheet: {sheet_name}"))
                         
                         content_list.append(
                             ImageContent(
@@ -453,15 +497,12 @@ def register_graph_tools(mcp: FastMCP) -> None:
                             )
                         )
                         
-                        sheet_name = os.path.basename(svg_file_path)
-                        content_list.insert(-1, TextContent(type="text", text=f"Sheet: {sheet_name}"))
-
                     except Exception as e:
                         import traceback
                         content_list.append(
                             TextContent(
                                 type="text", 
-                                text=f"Fehler bei der pyvips SVG->JPG Konvertierung für {svg_file_path}:\n{str(e)}\n{traceback.format_exc()}"
+                                text=f"Error during pyvips SVG->JPG conversion for {svg_file_path}:\n{str(e)}\n{traceback.format_exc()}"
                             )
                         )
 

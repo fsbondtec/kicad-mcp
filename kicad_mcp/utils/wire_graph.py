@@ -259,29 +259,36 @@ class GlobalWireGraph:
                 continue
             
             pin_positions = {}
+            sx = 1.0
+            sy = -1.0
+            
+            if hasattr(symbol, 'mirror') and symbol.mirror:
+                if symbol.mirror == 'x':
+                    sy = 1.0   
+                elif symbol.mirror == 'y':
+                    sx = -1.0 
+                elif symbol.mirror == 'xy':
+                    sx = -1.0
+                    sy = 1.0
+
             for unit in lib_symbol.units:
                 for pin in unit.pins:
                     pin_num = pin.number
-                    pin_offset = (pin.position.X, pin.position.Y)
-
-                    rotated_x = (
-                    pin_offset[0] * math.cos(angle_rad)
-                    - pin_offset[1] * math.sin(angle_rad)
-                    )
-
-                    rotated_y = (
-                        pin_offset[0] * math.sin(angle_rad)
-                        + pin_offset[1] * math.cos(angle_rad)
-                    )
                     
-                    # calculate offset without rotation
+                    scaled_x = pin.position.X * sx
+                    scaled_y = pin.position.Y * sy
+                    
+                 
+                    rotated_x = scaled_x * math.cos(angle_rad) + scaled_y * math.sin(angle_rad)
+                    rotated_y = -scaled_x * math.sin(angle_rad) + scaled_y * math.cos(angle_rad)
+                    
                     absolute_pos = (
                         comp_pos[0] + rotated_x,
                         comp_pos[1] + rotated_y
                     )
                     
                     pin_positions[pin_num] = absolute_pos
-                
+            
             #add pins to wire graph
             self.add_component_pins(comp_ref, pin_positions)
 
