@@ -15,10 +15,6 @@ from kicad_mcp.utils.graph_analysis import CircuitGraph
 from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files
 from kicad_mcp.utils.file_utils import get_project_files
 
-vips_bin_path = r'C:\Users\messeel\KiCad\vips\vips-dev-8.18\bin'
-os.environ['PATH'] = vips_bin_path + ';' + os.environ.get('PATH', '')
-
-
 import pyvips
 
 project_cache: Dict[str, Dict[str, Any]] = {}
