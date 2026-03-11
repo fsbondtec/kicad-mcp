@@ -8,12 +8,13 @@ from mcp.server.fastmcp import FastMCP, Context
 import hashlib
 import base64
 from mcp.types import TextContent, ImageContent
-from fastmcp import Image
 
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
 from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files
 from kicad_mcp.utils.file_utils import get_project_files
+
+
 
 import pyvips
 

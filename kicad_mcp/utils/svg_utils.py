@@ -16,7 +16,6 @@ DEFAULT_STYLE = {
 }
 
 
-
 def build_svg_map_from_project_files(project_files: Dict) -> Dict[str, str]:
     """
     Maps the schematic file names to svg file names
