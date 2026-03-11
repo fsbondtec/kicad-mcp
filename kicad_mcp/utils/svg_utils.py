@@ -15,11 +15,12 @@ DEFAULT_STYLE = {
     "stroke_linejoin":"round",
 }
 
-def sheet_name_from_path(sch_path: str) -> str:
-    return os.path.splitext(os.path.basename(sch_path))[0]
 
 
 def build_svg_map_from_project_files(project_files: Dict) -> Dict[str, str]:
+    """
+    Maps the schematic file names to svg file names
+    """
     svg_map: Dict[str, str] = {}
 
     project_path = project_files.get("project")
@@ -94,7 +95,7 @@ def segments_to_svg_path(segments: List[Dict]) -> str:
     return " ".join(d_parts)
 
 def build_path_element(d: str, style: Dict, path_id: str) -> str:
-    """Erzeugt einen SVG <path>-Tag als String."""
+    """Creates SVG <path>-Tag as string."""
     sw = style["stroke_width"]
     return (
         f'<path id="{path_id}" '
@@ -119,6 +120,7 @@ def inject_into_svg(svg_path: str, new_elements: str, path_id_prefix: str) -> bo
         f'{OVERLAY_END}\n'
     )
 
+    #if a Path already exists in the file it is overwritten 
     pattern = re.compile(
         re.escape(OVERLAY_START) + r".*?" + re.escape(OVERLAY_END),
         re.DOTALL
@@ -152,7 +154,7 @@ def draw_path_to_svg(
     }
 
     if not wire_segments:
-        result["errors"].append("Keine wire_segments übergeben.")
+        result["errors"].append("No wire segments given")
         return result
 
     active_style = {**DEFAULT_STYLE, **(style or {})}
@@ -161,12 +163,12 @@ def draw_path_to_svg(
     for seg in wire_segments:
         sheet = seg.get("sheet", "")
         if not sheet:
-            result["skipped_sheets"].append({"sheet": "(leer)", "reason": "Kein sheet-Key im Segment"})
+            result["skipped_sheets"].append({"sheet": "(empty)", "reason": "no sheet in segment"})
             continue
         by_sheet.setdefault(sheet, []).append(seg)
 
     if not by_sheet:
-        result["errors"].append("Keine Segmente mit sheet-Angabe gefunden.")
+        result["errors"].append("No segments with sheet found")
         return result
 
     
@@ -176,7 +178,7 @@ def draw_path_to_svg(
         if svg_file is None:
             result["skipped_sheets"].append({
                 "sheet":  sheet,
-                "reason": f"Keine SVG-Datei im Projektordner gefunden (gesucht: *{sheet}*.svg)"
+                "reason": f"No svg File found in project folder (searched for: *{sheet}*.svg)"
             })
             continue
 
@@ -184,7 +186,7 @@ def draw_path_to_svg(
         if not d:
             result["skipped_sheets"].append({
                 "sheet":  sheet,
-                "reason": "Alle Segmente sind virtuelle Label-Bridges (übersprungen)"
+                "reason": "all segments are virtual bridges, skipped"
             })
             continue
 
@@ -195,7 +197,7 @@ def draw_path_to_svg(
         try:
             ok = inject_into_svg(svg_file, element_str, path_id_prefix)
         except Exception as e:
-            result["errors"].append(f"[{sheet}] Fehler beim Schreiben: {e}")
+            result["errors"].append(f"[{sheet}] Error writing: {e}")
             continue
 
         if ok:
@@ -206,7 +208,7 @@ def draw_path_to_svg(
             })
             any_written = True
         else:
-            result["errors"].append(f"[{sheet}] SVG hat kein </svg>-Tag Datei nicht verändert.")
+            result["errors"].append(f"[{sheet}] svg does not hav </svg>-tag, file was not changed.")
 
     result["success"] = any_written
     return result

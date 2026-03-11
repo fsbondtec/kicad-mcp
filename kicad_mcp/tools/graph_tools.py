@@ -6,12 +6,16 @@ import os
 from typing import Dict, Any
 from mcp.server.fastmcp import FastMCP, Context
 import hashlib
+import base64
+from mcp.types import TextContent, ImageContent
+from fastmcp import Image
 
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
 from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files
 from kicad_mcp.utils.file_utils import get_project_files
 
+import pyvips
 
 project_cache: Dict[str, Dict[str, Any]] = {}
 highlight_cache = {}  # cache for all highlighted KIIDs
@@ -292,12 +296,12 @@ def register_graph_tools(mcp: FastMCP) -> None:
         draw_svg: bool = True,
         svg_stroke_color: str = "#FF4400",
         svg_stroke_width: float = 0.4,
-    ) -> Dict:
+    ) -> list:
         """Find the shortest path between two components with wire segment details.
 
         This tool analyzes the circuit netlist and finds the connection path
         between two specified components, including the physical wire segments
-        that connect them in the schematic.
+        that connect them in the schematic. The Paths can be written in a svg file und be presented in claude response.
 
         Args:
             project_path: Path to the KiCad project file (.kicad_pro)
@@ -306,31 +310,34 @@ def register_graph_tools(mcp: FastMCP) -> None:
             end_component: Ending component reference (e.g., "U3")
             max_depth: Maximum number of components in the path
             ignore_power: If true, ignore power connections in path finding
-            ctx: MCP context for progress reporting
+            ctx: MCP context for progress reporting is null
+            draw_svg: bool = True, writes in svg File und returns jpeg in Response
+            svg_stroke_color: str = "#FF4400" default stroke color is red
+            svg_stroke_width: float = 0.4 default stroke weight
 
         Returns:
-            Dictionary with path information including wire segments or error message
+            List with image and text information of Path
         """
 
         if not os.path.exists(project_path):
             if ctx:
                 ctx.info(f"Project not found: {project_path}")
-            return {"success": False, "error": f"Project not found: {project_path}"}
+            return [{"success": False, "error": f"Project not found: {project_path}"}]
 
         if not os.path.exists(schematic_path):
             if ctx:
                 ctx.info(f"Schematic not found: {schematic_path}")
-            return {"success": False, "error": f"Schematic not found: {schematic_path}"}
+            return [{"success": False, "error": f"Schematic not found: {schematic_path}"}]
 
         if not start_component or not start_component.strip():
             if ctx:
                 ctx.info("Start component reference is empty")
-            return {"success": False, "error": "Start component reference cannot be empty"}
+            return [{"success": False, "error": "Start component reference cannot be empty"}]
 
         if not end_component or not end_component.strip():
             if ctx:
                 ctx.info("End component reference is empty")
-            return {"success": False, "error": "End component reference cannot be empty"}
+            return [{"success": False, "error": "End component reference cannot be empty"}]
 
         try:
             if ctx:
@@ -411,42 +418,79 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 else:
                     if ctx:
                         ctx.info("No real wire segments to draw (only virtual bridges or component hops)")
+            
+            summary = (
+                f"Path found with {path_result.get('path_length', 0)} components.\n"
+                f"Logical Path: {' -> '.join(path_result.get('path', []))}\n" 
+            )
+            
+            if svg_success and written_svg_paths:
+                summary += "\nSVG(s) saved to:\n" + "\n".join(written_svg_paths)
+            
+            content_list = [
+                TextContent(type="text", text=summary)
+            ]
 
-            return {
-                "success": True,
-                "start_component": start_component,
-                "end_component": end_component,
-                "path": path_result.get("path", []),
-                "path_length": path_result.get("path_length", 0),
-                "svg_drawn": svg_success,
-                "written_svg_files": written_svg_paths,
-                "errors": svg_errors
-            }
+            if svg_success and written_svg_paths:
+                for svg_file_path in written_svg_paths:
+                    try:
+                        image = pyvips.Image.new_from_file(svg_file_path, dpi=75)
+                        
+                        
+                        if image.hasalpha():
+                            image = image.flatten(background=[255, 255, 255]) #white background
+                        
+                        jpg_bytes = image.write_to_buffer(".jpg[Q=60]")
+                        
+                        encoded_string = base64.b64encode(jpg_bytes).decode('utf-8')
+                        
+                        content_list.append(
+                            ImageContent(
+                                type="image",
+                                data=encoded_string,
+                                mimeType="image/jpeg"
+                            )
+                        )
+                        
+                        sheet_name = os.path.basename(svg_file_path)
+                        content_list.insert(-1, TextContent(type="text", text=f"Sheet: {sheet_name}"))
+
+                    except Exception as e:
+                        import traceback
+                        content_list.append(
+                            TextContent(
+                                type="text", 
+                                text=f"Fehler bei der pyvips SVG->JPG Konvertierung für {svg_file_path}:\n{str(e)}\n{traceback.format_exc()}"
+                            )
+                        )
+
+            return content_list
+
         
         except FileNotFoundError as e:
             if ctx:
                 ctx.info(f"File not found: {str(e)}")
-            return {"success": False, "error": f"File not found: {str(e)}"}
+            return [{"success": False, "error": f"File not found: {str(e)}"}]
 
         except ValueError as e:
             if ctx:
                 ctx.info(f"Invalid data encountered: {str(e)}")
-            return {"success": False, "error": f"Invalid data: {str(e)}"}
+            return [{"success": False, "error": f"Invalid data: {str(e)}"}]
 
         except KeyError as e:
             if ctx:
                 ctx.info(f"Missing required data: {str(e)}")
-            return {"success": False, "error": f"Missing required data: {str(e)}"}
+            return [{"success": False, "error": f"Missing required data: {str(e)}"}]
 
         except Exception as e:
             if ctx:
                 ctx.error(f"Error finding circuit path with wires: {str(e)}")
             import traceback
-            return {
+            return [{
                 "success": False,
                 "error": f"Error finding circuit path with wires: {str(e)}",
                 "traceback": traceback.format_exc()
-            }
+            }]
 
 
 
@@ -532,6 +576,28 @@ def register_graph_tools(mcp: FastMCP) -> None:
             if ctx:
                 ctx.info(f"Error marking path: {str(e)}")
             return {"success": False, "error": str(e)}
+        
+    @mcp.tool()
+    async def test_image_display() -> list:
+        """A simple test tool to check if Claude can render images from the MCP server."""
+        
+        file_path = "C:/Users/messeel/Downloads/pexels-marcologous-36174369.jpg"
+
+        with open(file_path, "rb") as image_file:
+            base64_string = base64.b64encode(image_file.read()).decode("utf-8")
+            
+            # Der MCP-Standard verlangt für Bilder eine Liste aus Content-Blöcken
+            return [
+                TextContent(
+                    type="text", 
+                    text="Hier ist das Testbild (ein roter Punkt). Wenn das funktioniert, können wir das auch mit SVGs oder PNGs machen!"
+                ),
+                ImageContent(
+                    type="image",
+                    data=base64_string,
+                    mimeType="image/png"
+                )
+            ]
 
     @mcp.tool()
     async def unmark_paths(
@@ -636,3 +702,4 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
         # erster available layer oder default
         return available_layers[0] if available_layers else "Eco1.User"
+

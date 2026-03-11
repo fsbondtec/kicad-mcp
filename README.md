@@ -72,6 +72,23 @@ In the `.env` file, add your custom project directories:
 KICAD_SEARCH_PATHS=~/pcb,~/Electronics,~/Projects/KiCad
 ```
 
+### Image Rendering with PyVIPS
+
+To display highlighted circuit paths directly in the chat, this server converts KiCad's highly SVG schematics into compressed JPEG images. We use **PyVIPS** for this task. 
+
+**Windows Setup for PyVIPS:**
+If you are running this server on Windows, PyVIPS requires the underlying `libvips` C-binaries to function.
+
+1. Download the latest Windows ZIP archive (`vips-dev-w64-web-...zip`) from the [libvips releases page](https://github.com/libvips/build-win64-mxe/releases).
+2. Extract the folder to a permanent location on your drive (e.g., `C:\vips`).
+3. Add the absolute path to the extracted `bin` folder to your `.env` file so Python can locate the required `.dll` files:
+
+```env
+# Add the path to your libvips bin directory (Windows only)
+LIBVIPS_BIN_PATH=C:\vips\vips-dev-8.15\bin
+```
+
+
 
 ### 3. Configure an MCP Client
 
