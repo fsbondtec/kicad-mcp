@@ -46,7 +46,7 @@ def get_project_files(project_path: str) -> dict[str, str]:
             file_path = os.path.join(project_dir, f"{project_name}{extension}")
             if os.path.exists(file_path):
                 files[file_type] = file_path
-    
+
     # Check for data files
     try:
         for ext in DATA_EXTENSIONS:
@@ -80,4 +80,3 @@ def load_project_json(project_path: str) -> dict[str, Any] | None:
             return json.load(f)
     except Exception:
         return None
-    
