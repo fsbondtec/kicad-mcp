@@ -15,6 +15,10 @@ from kicad_mcp.utils.graph_analysis import CircuitGraph
 from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files
 from kicad_mcp.utils.file_utils import get_project_files
 
+vips_bin_path = r'C:\Users\messeel\KiCad\vips\vips-dev-8.18\bin'
+os.environ['PATH'] = vips_bin_path + ';' + os.environ.get('PATH', '')
+
+
 import pyvips
 
 project_cache: Dict[str, Dict[str, Any]] = {}
@@ -577,27 +581,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 ctx.info(f"Error marking path: {str(e)}")
             return {"success": False, "error": str(e)}
         
-    @mcp.tool()
-    async def test_image_display() -> list:
-        """A simple test tool to check if Claude can render images from the MCP server."""
-        
-        file_path = "C:/Users/messeel/Downloads/pexels-marcologous-36174369.jpg"
-
-        with open(file_path, "rb") as image_file:
-            base64_string = base64.b64encode(image_file.read()).decode("utf-8")
-            
-            # Der MCP-Standard verlangt für Bilder eine Liste aus Content-Blöcken
-            return [
-                TextContent(
-                    type="text", 
-                    text="Hier ist das Testbild (ein roter Punkt). Wenn das funktioniert, können wir das auch mit SVGs oder PNGs machen!"
-                ),
-                ImageContent(
-                    type="image",
-                    data=base64_string,
-                    mimeType="image/png"
-                )
-            ]
 
     @mcp.tool()
     async def unmark_paths(
