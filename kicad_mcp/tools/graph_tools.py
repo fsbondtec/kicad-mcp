@@ -11,7 +11,7 @@ from mcp.types import TextContent, ImageContent
 
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
-from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files
+from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files, plot_svg
 from kicad_mcp.utils.file_utils import get_project_files
 
 
@@ -345,6 +345,8 @@ def register_graph_tools(mcp: FastMCP) -> None:
             if ctx:
                 await ctx.report_progress(20, 100)
                 ctx.info(f"Loading circuit data from {project_path}...")
+
+            plot_svg(project_path)
 
             graph, _ = get_data(project_path, schematic_path)
 

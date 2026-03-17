@@ -2,6 +2,11 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
+import sys
+
+
+from kicad_mcp.utils.kicad_cli import *
+from kicad_mcp.utils.file_utils import get_project_files 
 
 OVERLAY_START = "<!-- path_overlay_start -->"
 OVERLAY_END   = "<!-- path_overlay_end -->"
@@ -14,6 +19,39 @@ DEFAULT_STYLE = {
     "stroke_linecap": "round",
     "stroke_linejoin":"round",
 }
+
+def plot_svg(project_path: str):
+    try:
+        cli_path = get_kicad_cli_path(required=True)
+    except KiCadCLIError as e:
+        print("Error searching for cli")
+        return
+    
+    base_path, _ = os.path.splitext(project_path)
+    main_sch_path = f"{base_path}.kicad_sch"
+
+    if not os.path.exists(main_sch_path):
+        print(f"Schematic not found: {main_sch_path}", file=sys.stderr)
+        return
+    
+    project_dir = os.path.dirname(project_path)
+
+    cmd = [
+        cli_path,
+        "sch",
+        "export",
+        "svg",
+        "--output", project_dir,
+        main_sch_path
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print("export successfull")
+    except subprocess.CalledProcessError as e:
+        print("error when plotting")
+        print(e.stderr if e.stderr else e.stdout)
+
 
 
 def build_svg_map_from_project_files(project_files: Dict) -> Dict[str, str]:
