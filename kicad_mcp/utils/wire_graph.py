@@ -190,6 +190,16 @@ class GlobalWireGraph:
                     )
             
                     wire_id += 1
+        
+        for item in sch.busEntries:
+            start_pos = (item.position.X, item.position.Y)
+            end_pos = (item.position.X + item.size.X, item.position.Y + item.size.Y)
+            
+            start_node = self.find_node_at_position(start_pos)
+            end_node = self.find_node_at_position(end_pos)
+            
+            self.add_wire(start_node, end_node, f"busentry_{wire_id}")
+            wire_id += 1
 
         self.collect_labels(sch, sch_path)
         
@@ -306,7 +316,9 @@ class GlobalWireGraph:
                 dist = ((pin_pos[0] - pos[0])**2 + (pin_pos[1] - pos[1])**2)**0.5
                 if dist < tolerance:
                     return (comp_ref, pin_num)
-        return pos
+                
+        return (round(pos[0], 3), round(pos[1], 3))
+
                 
     def find_node_at_position(self, pos, tolerance: float = 0.1) -> NodeType:
         return self._resolve_position(pos, tolerance)
