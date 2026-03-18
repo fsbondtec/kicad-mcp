@@ -64,12 +64,11 @@ def register_drc_tools(mcp: FastMCP) -> None:
         }
 
     @mcp.tool()
-    async def run_drc_check(project_path: str, ctx: Context | None) -> Dict[str, Any]:
+    async def run_drc_check(project_path: str) -> Dict[str, Any]:
         """Run a Design Rule Check on a KiCad PCB file.
 
         Args:
             project_path: Path to the KiCad project file (.kicad_pro)
-            ctx: MCP context for progress reporting
 
         Returns:
             Dictionary with DRC results and statistics
@@ -87,20 +86,11 @@ def register_drc_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": "PCB file not found in project"}
 
         pcb_file = files["pcb"]
-        # print(f"Found PCB file: {pcb_file}")
-
-        # Report progress to user
-        if ctx:
-            await ctx.report_progress(10, 100)
-            ctx.info(f"Starting DRC check on {os.path.basename(pcb_file)}")
-
+        
         # Run DRC using the appropriate approach
         drc_results = None
-
-        print("Using kicad-cli for DRC")
-        if ctx:
-            ctx.info("Using KiCad CLI for DRC check...")
-        drc_results = await run_drc_via_cli(pcb_file, ctx)
+        
+        drc_results = await run_drc_via_cli(pcb_file)
 
         # Process and save results if successful
         if drc_results and drc_results.get("success", False):
@@ -112,17 +102,7 @@ def register_drc_tools(mcp: FastMCP) -> None:
             if comparison:
                 drc_results["comparison"] = comparison
 
-                if ctx:
-                    if comparison["change"] < 0:
-                        ctx.info(
-                            f"Great progress! You've fixed {abs(comparison['change'])} DRC violations since the last check."
-                        )
-                    elif comparison["change"] > 0:
-                        ctx.info(
-                            f"Found {comparison['change']} new DRC violations since the last check."
-                        )
-                    else:
-                        ctx.info(f"No change in the number of DRC violations since the last check.")
+    
         elif drc_results:
             # Pass or print a warning if needed
             pass
@@ -130,8 +110,5 @@ def register_drc_tools(mcp: FastMCP) -> None:
             # Pass or print an error if needed
             pass
 
-        # Complete progress
-        if ctx:
-            await ctx.report_progress(100, 100)
 
         return drc_results or {"success": False, "error": "DRC check failed with an unknown error"}

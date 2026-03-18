@@ -39,7 +39,6 @@ class CircuitGraph:
         self.wire_graph = GlobalWireGraph(tolerance=0.01)
         self.wire_graph.build_from_project(self.project_path)
 
-
     def load_powerSymbols(self):
         """loads Power Symbols once for the whole class"""
         if self.project_path and self.power_symbols is None:
@@ -49,6 +48,11 @@ class CircuitGraph:
 
     def find_path(self, start: str, end: str, ignore_power: bool, max_depth: int = 10) -> List[str]:
         """Find shortest Path between two components
+        Args:
+            start: the component where the path should start
+            end: component where graph should end
+            ignore_power: if true the only connections are found that do not contain a power net
+            max_depth: max components in path, default is set to 10
 
         Returns:
             List of component references forming the path
@@ -59,7 +63,6 @@ class CircuitGraph:
                 "success": False,
                 "path": None,
                 "path_length": 0,
-                # "component_details": []
                 "nets": [],
             }
 
@@ -145,7 +148,6 @@ class CircuitGraph:
             "success": False,
             "path": None,
             "path_length": 0,
-            # "component_details": []
         }  # no path
 
     def _build_detailed_path(self, path: List[str]) -> List[str]:
@@ -200,260 +202,28 @@ class CircuitGraph:
         
         return []
     
-    def mark_path(self, nets: list, layer: str) -> Dict[str, Any]:
-        """Highlight the given Nets on the Layout in Kicad"""
-
-        result = {
-            "success": False,
-            "created_items_length": 0,
-            "created_items": [],
-            "highlighted_nets": [],
-            "used_layer": None,
-            "errors": [],
-        }
-
-        try:
-            if not nets:
-                result["errors"].append("No nets provided")
-                return result
-
-            if not isinstance(nets, list):
-                result["errors"].append("Nets must be a list")
-                return result
-
-            try:
-                kicad = KiCad()
-            except Exception as e:
-                result["errors"].append(
-                    f"Failed to connect to KiCad: {str(e)}, You need to have Kicad Project running and open"
-                )
-                return result
-
-            try:
-                board = kicad.get_board()
-                if not board:
-                    result["errors"].append("No board is currently open in KiCad")
-                    return result
-            except Exception as e:
-                result["errors"].append(f"Failed to get board: {str(e)}")
-                return result
-
-            enabled_layer_names = []
-            for l in board.get_enabled_layers():
-                enabled_layer_names.append(board_layer.canonical_name(l))
-
-            # choose given layer or Eco1 or user Layer
-            if layer is not None:
-                if layer in enabled_layer_names:
-                    highlight_layer = board_layer.layer_from_canonical_name(layer)
-                    result["used_layer"] = layer
-                else:
-                    result["errors"].append(
-                        f"Layer '{layer}' not found. Available: {enabled_layer_names}"
-                    )
-                    return result
-            else:
-                default_layer = "Eco1.User"
-                if default_layer in enabled_layer_names:
-                    highlight_layer = board_layer.layer_from_canonical_name(default_layer)
-                    result["used_layer"] = default_layer
-                else:
-                    user_layers = [l for l in enabled_layer_names if "Eco" in l or "User" in l]
-                    if user_layers:
-                        highlight_layer = board_layer.layer_from_canonical_name(user_layers[0])
-                        result["used_layer"] = user_layers[0]
-                    else:
-                        result["errors"].append("No user layers available")
-                        return result
-
-            created_items = []
-            created_items_id = []
-            target_nets = nets
-
-            if not target_nets:
-                result["errors"].append("No valid net references found")
-                return result
-
-            # start the commit
-            try:
-                commit = board.begin_commit()
-            except Exception as e:
-                result["errors"].append(f"Failed to begin commit: {str(e)}")
-                return result
-
-            try:
-                # Iterate through tracks
-                tracks = board.get_tracks()
-                if not tracks:
-                    result["errors"].append("No tracks found on board")
-                    board.push_commit(commit, "Highlighted Path - No tracks")
-                    return result
-
-                for track in board.get_tracks():
-                    try:
-                        net = track.net
-
-                        if net and net.name in target_nets:
-                            seg = BoardSegment()
-
-                            start = Vector2()
-                            start.x = track.start.x
-                            start.y = track.start.y
-                            seg.start = start
-
-                            end = Vector2()
-                            end.x = track.end.x
-                            end.y = track.end.y
-                            seg.end = end
-
-                            # layer can be chosen
-                            seg.layer = highlight_layer
-
-                            # for highlight take double of original width
-                            seg.attributes.stroke.width = int(track.width * 2)
-
-                            created_item = board.create_items(seg)
-
-                            if isinstance(created_item, list):
-                                created_items.extend(created_item)
-                                for item in created_items:
-                                    created_items_id.append(item.id)
-
-                            if net.name not in result["highlighted_nets"]:
-                                result["highlighted_nets"].append(net.name)
-
-                    except:
-                        result["errors"].append(f"Failed to process track: {str(e)}")
-                        continue
-
-                if created_items:
-                    try:
-                        board.add_to_selection(created_items)
-                        result["created_items_length"] = len(created_items)
-                        result["created_items"] = created_items_id
-                    except Exception as e:
-                        result["errors"].append(f"Failed to add items to selection: {str(e)}")
-                else:
-                    result["errors"].append(f"No tracks found for given nets")
-
-                try:
-                    board.push_commit(commit, "Highlighted Path")
-                    result["success"] = bool(created_items)
-                except Exception as e:
-                    result["errors"].append(f"Failed to push commit: {str(e)}")
-                    return result
-
-            except Exception as e:
-                result["errors"].append(f"Error during track processing: {str(e)}")
-                try:
-                    board.push_commit(commit, "Highlighted Path - Failed")
-                except:
-                    pass
-                return result
-
-        except Exception as e:
-            result["errors"].append(f"Unexpected error: {str(e)}")
-            return result
-
-        return result
-
-    def get_user_layers(self) -> Dict[str, Any]:
-        """ """
-
-        try:
-            kicad = KiCad()
-            board = kicad.get_board()
-
-            if not board:
-                return {"available": [], "preferred_order": [], "error": "No board open in KiCad"}
-
-            enabled_layers = board.get_enabled_layers()
-            layer_names = []
-
-            for layer in enabled_layers:
-                layer_names.append(board_layer.canonical_name(layer))
-
-            user_layers = []
-            for name in layer_names:
-                if name.startswith("User") or name.startswith("Eco"):
-                    user_layers.append(name)
-
-            # Reihenfolge
-            preferred = []
-            for pref in ["Eco1.User", "Eco2.User"] + [f"User.{i}" for i in range(1, 10)]:
-                if pref in user_layers:
-                    preferred.append(pref)
-
-            for layer in user_layers:
-                if layer not in preferred:
-                    preferred.append(layer)
-
-            return {
-                "available": user_layers,
-                "preferred_order": preferred,
-                "all_layers": layer_names,
-            }
-
-        except Exception as e:
-            return {
-                "available": ["Eco1.User"],
-                "preferred_order": ["Eco1.User"],
-                "error": f"Could not connect to KiCad: {str(e)}",
-            }
-
-    def unmark_path(self, created_items: list) -> Dict[str, Any]:
-        result = {"success": False, "deleted_items": 0, "errors": []}
-
-        try:
-            kicad = KiCad()
-        except Exception as e:
-            result["errors"].append(
-                f"Failed to connect to KiCad: {str(e)}, You need to have Kicad Project running and open"
-            )
-            return result
-
-        try:
-            board = kicad.get_board()
-            if not board:
-                result["errors"].append("No board is currently open in KiCad")
-                return result
-        except Exception as e:
-            result["errors"].append(f"Failed to get board: {str(e)}")
-            return result
-
-        try:
-            commit = board.begin_commit()
-
-            try:
-                board.remove_items_by_id(created_items)
-                result["deleted_items"] = len(created_items)
-            except Exception as e:
-                result["errors"].append(f"Failed to delete items")
-
-            board.push_commit(commit, "Removed Highlight Path")
-            result["success"] = result["deleted_items"] > 0
-
-        except Exception as e:
-            result["errors"].append(f"Failed to clear highlights: {str(e)}")
-            return result
-
-        return result
-
     def get_neighborhood(self, component: str, ignore_Power: bool, radius: int) -> Dict[str, Any]:
-        """Find componoents in a given distance (for Functional Block Analysis)"""
+        """
+        Find componoents in a given distance (for Functional Block Analysis)
+
+         Args:
+            component (str): find the neighbors for this specified component
+            ignore_Power(bool): if true only neighbors are 
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the execution results 
+        """
 
         if component not in self.adjacency_list:
             return {
                 "success": False,
                 "start": component,
                 "neighborhood": [],
-                # "details": []
             }
 
         queue = deque([(component, 0)])  # start component and depth 0
         visited = {component}
         allNeighbors = []
-        depthCounter = 0
 
         while queue:
             currentNode, currentDepth = queue.popleft()
@@ -490,14 +260,11 @@ class CircuitGraph:
                 ):
                     allNeighbors.append((currentDepth + 1, neighbor))
 
-        details = [{"ref": ref, **self.nodes[ref]} for ref in allNeighbors if ref in self.nodes]
-
         return {
             "success": True,
             "start": component,
             "radius": radius,
             "neighborhood": allNeighbors,
-            # "details": details
         }
 
     def _build_graph(self):

@@ -4,7 +4,7 @@ Netlist extraction, graph creation anf analysis of project
 
 import os
 from typing import Dict, Any
-from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.fastmcp import FastMCP
 import hashlib
 import base64
 from mcp.types import TextContent, ImageContent
@@ -13,6 +13,7 @@ from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
 from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files, plot_svg
 from kicad_mcp.utils.file_utils import get_project_files
+from kicad_mcp.utils.pcb_highlight_utils import PcbHighlightManager
 
 
 
@@ -20,7 +21,7 @@ from kicad_mcp.utils.file_utils import get_project_files
 import pyvips
 
 project_cache: Dict[str, Dict[str, Any]] = {}
-highlight_cache = {}  # cache for all highlighted KIIDs
+pcb_manager = PcbHighlightManager()
 
 
 def get_data(project_path: str, schematic_path: str) -> tuple[CircuitGraph, Dict]:
@@ -77,12 +78,11 @@ def register_graph_tools(mcp: FastMCP) -> None:
     """
 
     @mcp.tool()
-    async def get_netGraph(project_path: str, schematic_path: str, ctx: Context | None):
+    async def get_netGraph(project_path: str, schematic_path: str):
         """Get the complete network graph of a KiCad schematic.
 
         Args:
             schematic_path: Path to the KiCad schematic file (.kicad_sch)
-            ctx: MCP context for progress reporting
 
         Returns:
             Dictionary with nodes, edges, and adjacency list or error message
@@ -129,7 +129,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
         end_component: str,
         max_depth: int,
         ignore_power: bool,
-        ctx: Context | None,
     ) -> Dict:
         """Find the shortest path between two components in a circuit.
 
@@ -142,43 +141,29 @@ def register_graph_tools(mcp: FastMCP) -> None:
             end_component: Ending component reference (e.g., "U3")
             abstraction_level: high | medium | low -> filter the graph based on abstraction level
             max_depth: Maximum number of components in the path
-            ctx: MCP context for progress reporting
 
         Returns:
             Dictionary with path information or error message
         """
 
         if not os.path.exists(schematic_path):
-            if ctx:
-                ctx.info(f"Schematic not found: {schematic_path}")
             return {"success": False, "error": f"Schematic not found: {schematic_path}"}
 
         # Validate component references
         if not start_component or not start_component.strip():
-            if ctx:
-                ctx.info("Start component reference is empty")
             return {"success": False, "error": "Start component reference cannot be empty"}
 
         if not end_component or not end_component.strip():
-            if ctx:
-                ctx.info("End component reference is empty")
             return {"success": False, "error": "End component reference cannot be empty"}
 
         try:
             graph, _ = get_data(project_path, schematic_path)
 
-            if ctx:
-                await ctx.report_progress(80, 100)
-                ctx.info(f"Finding path from {start_component} to {end_component}...")
 
             path_result = graph.find_path(start_component, end_component, ignore_power, max_depth)
 
-            if ctx:
-                await ctx.report_progress(100, 100)
 
             if not path_result.get("success"):
-                if ctx:
-                    ctx.info(f"No path found between {start_component} and {end_component}")
                 return {
                     "success": False,
                     "error": f"No path found between {start_component} and {end_component}",
@@ -186,8 +171,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
                     "end_component": end_component,
                 }
 
-            if ctx:
-                ctx.info(f"Path found with {path_result.get('path_length', 0)} components")
 
             return {
                 "success": True,
@@ -199,18 +182,12 @@ def register_graph_tools(mcp: FastMCP) -> None:
             }
 
         except FileNotFoundError as e:
-            if ctx:
-                ctx.info(f"File not found: {str(e)}")
             return {"success": False, "error": f"File not found: {str(e)}"}
 
         except ValueError as e:
-            if ctx:
-                ctx.info(f"Invalid data encountered: {str(e)}")
             return {"success": False, "error": f"Invalid data: {str(e)}"}
 
         except Exception as e:
-            if ctx:
-                ctx.info(f"Error finding circuit path: {str(e)}")
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
 
     @mcp.tool()
@@ -220,7 +197,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
         center_component: str,
         ignore_power: bool,
         radius: int,
-        ctx: Context | None,
     ) -> Dict:
         """
         Analyze the functional block around a given component in a schematic.
@@ -232,30 +208,19 @@ def register_graph_tools(mcp: FastMCP) -> None:
         """
 
         if not os.path.exists(schematic_path):
-            if ctx:
-                ctx.info(f"Schematic not found: {schematic_path}")
             return {"success": False, "error": f"Schematic not found: {schematic_path}"}
 
         if not center_component or not center_component.strip():
-            if ctx:
-                ctx.info("Start component reference is empty")
             return {"success": False, "error": "Start component reference cannot be empty"}
 
         try:
             graph, _ = get_data(project_path, schematic_path)
 
-            if ctx:
-                await ctx.report_progress(80, 100)
-                ctx.info(f"Finding path from neighbors {center_component}...")
 
             path_result = graph.get_neighborhood(center_component, ignore_power, radius)
 
-            if ctx:
-                await ctx.report_progress(100, 100)
 
             if not path_result.get("success"):
-                if ctx:
-                    ctx.info(f"No neighbors found for {center_component}")
                 return {
                     "success": False,
                     "error": f"No neighbors found for {center_component}",
@@ -272,18 +237,12 @@ def register_graph_tools(mcp: FastMCP) -> None:
             }
 
         except FileNotFoundError as e:
-            if ctx:
-                ctx.info(f"File not found: {str(e)}")
             return {"success": False, "error": f"File not found: {str(e)}"}
 
         except ValueError as e:
-            if ctx:
-                ctx.info(f"Invalid data encountered: {str(e)}")
             return {"success": False, "error": f"Invalid data: {str(e)}"}
 
         except Exception as e:
-            if ctx:
-                ctx.info(f"Error finding circuit path: {str(e)}")
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
     
     @mcp.tool()
@@ -294,7 +253,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
         end_component: str,
         max_depth: int,
         ignore_power: bool,
-        ctx: Context | None,
         draw_svg: bool = True,
         svg_stroke_color: str = "#FF4400",
         svg_stroke_width: float = 0.4,
@@ -312,7 +270,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
             end_component: Ending component reference (e.g., "U3")
             max_depth: Maximum number of components in the path
             ignore_power: If true, ignore power connections in path finding
-            ctx: MCP context for progress reporting is null
             draw_svg: bool = True, writes in svg File und returns jpeg in Response
             svg_stroke_color: str = "#FF4400" default stroke color is red
             svg_stroke_width: float = 0.4 default stroke weight
@@ -322,37 +279,21 @@ def register_graph_tools(mcp: FastMCP) -> None:
         """
 
         if not os.path.exists(project_path):
-            if ctx:
-                ctx.info(f"Project not found: {project_path}")
             return [{"success": False, "error": f"Project not found: {project_path}"}]
 
         if not os.path.exists(schematic_path):
-            if ctx:
-                ctx.info(f"Schematic not found: {schematic_path}")
             return [{"success": False, "error": f"Schematic not found: {schematic_path}"}]
 
         if not start_component or not start_component.strip():
-            if ctx:
-                ctx.info("Start component reference is empty")
             return [{"success": False, "error": "Start component reference cannot be empty"}]
 
         if not end_component or not end_component.strip():
-            if ctx:
-                ctx.info("End component reference is empty")
             return [{"success": False, "error": "End component reference cannot be empty"}]
 
         try:
-            if ctx:
-                await ctx.report_progress(20, 100)
-                ctx.info(f"Loading circuit data from {project_path}...")
-
             plot_svg(project_path)
 
             graph, _ = get_data(project_path, schematic_path)
-
-            if ctx:
-                await ctx.report_progress(60, 100)
-                ctx.info(f"Finding path with wire segments from {start_component} to {end_component}...")
 
             # Find path with wire segments
             path_result = graph.find_path_with_wire_segments(
@@ -362,12 +303,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 max_depth=max_depth
             )
 
-            if ctx:
-                await ctx.report_progress(100, 100)
-
             if not path_result.get("success"):
-                if ctx:
-                    ctx.info(f"No path found between {start_component} and {end_component}")
                 return {
                     "success": False,
                     "error": f"No path found between {start_component} and {end_component}",
@@ -376,12 +312,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 }
 
             wire_segments_formatted = path_result.get("wire_segments_formatted", [])
-            
-            if ctx:
-                num_wires = sum(1 for s in wire_segments_formatted if s["type"] == "wire")
-                num_hops = sum(1 for s in wire_segments_formatted if s["type"] == "component_hop")
-                ctx.info(f"Path found with {path_result.get('path_length', 0)} components, "
-                         f"{num_wires} wire segments, and {num_hops} component hops")
                 
             # Svg feature 
             svg_success = False
@@ -389,7 +319,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             svg_errors = []
 
             if draw_svg:
-                # Lade hier die formatierte Liste für das Debugging
+                # debugging 
                 wire_segments_formatted = path_result.get("wire_segments_formatted", [])
                 
                 wire_only = [
@@ -397,7 +327,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
                     if s["type"] == "wire" and s.get("sheet", "virtual") != "virtual"
                 ]
 
-                # Initialisiere Variablen für den Fall, dass wire_only leer ist
                 svg_success = False
                 written_svg_paths = []
                 svg_errors = []
@@ -428,7 +357,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
                         svg_success = svg_result.get("success", False)
                         written_svg_paths = [f["svg"] for f in svg_result.get("written_files", [])]
                         
-                        # Fehler und Skipped-Gründe sicher extrahieren
                         raw_errors = svg_result.get("errors", [])
                         skipped_sheets = svg_result.get("skipped_sheets", [])
                         skipped_reasons = [s.get("reason", "Unknown reason") for s in skipped_sheets if isinstance(s, dict)]
@@ -439,17 +367,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
                         if svg_errors:
                             debug_info.append(f"SVG generation errors/skips: {svg_errors}")
 
-                    if ctx:
-                        if svg_success:
-                            ctx.info(f"SVG overlay written to: {written_svg_paths}")
-                        else:
-                            ctx.info(f"SVG overlay skipped/failed: {svg_errors}")
-                else:
-                    debug_info.append("Skipped SVG drawing because 'wire_only' list is empty.")
-                    if ctx:
-                        ctx.info("No real wire segments to draw (only virtual bridges or component hops)")
             
-            # Baue den Basis-Summary-Text auf
             summary = (
                 f"Path found with {path_result.get('path_length', 0)} components.\n"
                 f"Logical Path: {' -> '.join(path_result.get('path', []))}\n\n"
@@ -465,10 +383,8 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 TextContent(type="text", text=summary)
             ]
 
-            # PyVips Konvertierung und Image-Anhang
             if svg_success and written_svg_paths:
                 for svg_file_path in written_svg_paths:
-                    # Prüfen, ob die Datei auf der Festplatte überhaupt existiert, bevor pyvips startet
                     if not os.path.exists(svg_file_path):
                         content_list.append(
                             TextContent(type="text", text=f"File IO Error: SVG file does not exist at path: {svg_file_path}")
@@ -476,7 +392,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
                         continue
                         
                     try:
-                        # Logging vor PyVips Start
                         content_list.append(TextContent(type="text", text=f"Starting pyvips conversion for: {os.path.basename(svg_file_path)}"))
                         
                         image = pyvips.Image.new_from_file(svg_file_path, dpi=75)
@@ -487,7 +402,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
                         jpg_bytes = image.write_to_buffer(".jpg[Q=60]")
                         encoded_string = base64.b64encode(jpg_bytes).decode('utf-8')
                         
-                        # Das Text-Label VOR das Bild hängen
                         sheet_name = os.path.basename(svg_file_path)
                         content_list.append(TextContent(type="text", text=f"Rendered Sheet: {sheet_name}"))
                         
@@ -512,23 +426,15 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
         
         except FileNotFoundError as e:
-            if ctx:
-                ctx.info(f"File not found: {str(e)}")
             return [{"success": False, "error": f"File not found: {str(e)}"}]
 
         except ValueError as e:
-            if ctx:
-                ctx.info(f"Invalid data encountered: {str(e)}")
             return [{"success": False, "error": f"Invalid data: {str(e)}"}]
 
         except KeyError as e:
-            if ctx:
-                ctx.info(f"Missing required data: {str(e)}")
             return [{"success": False, "error": f"Missing required data: {str(e)}"}]
 
         except Exception as e:
-            if ctx:
-                ctx.error(f"Error finding circuit path with wires: {str(e)}")
             import traceback
             return [{
                 "success": False,
@@ -541,10 +447,8 @@ def register_graph_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     async def highlight_path(
         project_path: str,
-        schematic_path: str,
         path_nets: list,
         layer: str | None,
-        ctx: Context | None,
     ) -> Dict[str, Any]:
         """
         Mark the given path in KiCad pcb File on a User Layer.
@@ -553,29 +457,18 @@ def register_graph_tools(mcp: FastMCP) -> None:
             schematic_path: Path to the KiCad schematic file (.kicad_sch)
             path_nets: simple list of nets to mark
             layer: Optional specific layer name (e.g., "Eco1.User"). If None, auto-select.
-            ctx: MCP context
 
         Returns:
             Dictionary with success status
         """
         try:
-            if not schematic_path:
-                return {"success": False, "error": "Schematic path cannot be empty"}
-
-            if not schematic_path.endswith(".kicad_sch"):
-                return {"success": False, "error": "Invalid file type. Expected .kicad_sch file"}
-
-            if not os.path.exists(schematic_path):
-                return {"success": False, "error": f"Schematic file not found: {schematic_path}"}
-
-            graph, _ = get_data(project_path, schematic_path)
-
-            layer_info = graph.get_user_layers()
+           
+            layer_info = pcb_manager.get_user_layers()
 
             if layer is None:
                 layer = auto_select_layer(project_path, layer_info["available"])
 
-            mark_result = graph.mark_path(path_nets, layer)
+            mark_result = pcb_manager.mark_path(path_nets, layer)
 
             if not mark_result["success"]:
                 return {
@@ -587,10 +480,10 @@ def register_graph_tools(mcp: FastMCP) -> None:
             # cache die übergebenen Ids
             cache_key = f"{project_path}:highlights"
 
-            if cache_key not in highlight_cache:
-                highlight_cache[cache_key] = []
+            if cache_key not in pcb_manager.highlight_cache:
+                pcb_manager.highlight_cache[cache_key] = []
 
-            highlight_cache[cache_key].append(
+            pcb_manager.highlight_cache[cache_key].append(
                 {
                     "layer": mark_result["used_layer"],
                     "nets": path_nets,
@@ -599,10 +492,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             )
 
             # welche layer werden derzeit verwendet
-            used_layers = {h["layer"] for h in highlight_cache[cache_key]}
-
-            if ctx:
-                await ctx.report_progress(100, 100)
+            used_layers = {h["layer"] for h in pcb_manager.highlight_cache[cache_key]}
 
             return {
                 "success": True,
@@ -617,38 +507,27 @@ def register_graph_tools(mcp: FastMCP) -> None:
             }
 
         except Exception as e:
-            if ctx:
-                ctx.info(f"Error marking path: {str(e)}")
             return {"success": False, "error": str(e)}
         
 
     @mcp.tool()
     async def unmark_paths(
-        project_path: str, schematic_path: str, layers: list[str] | None, ctx: Context | None
+        project_path: str, layers: list[str] | None
     ) -> Dict[str, Any]:
         """
         Unmark all paths that are on the given layers in the Kicad Project pcb File
 
         Args:
-            schematic_path: Path to the KiCad schematic file (.kicad_sch)
-            ctx: MCP context
+            the layers where the paths should be drawn on 
 
         Returns:
             Dictionary with success status
         """
         try:
-            if not schematic_path:
-                return {"success": False, "error": "Schematic path cannot be empty"}
-
-            if not schematic_path.endswith(".kicad_sch"):
-                return {"success": False, "error": "Invalid file type. Expected .kicad_sch file"}
-
-            if not os.path.exists(schematic_path):
-                return {"success": False, "error": f"Schematic file not found: {schematic_path}"}
 
             cache_key = f"{project_path}:highlights"
 
-            if cache_key not in highlight_cache:
+            if cache_key not in pcb_manager.highlight_cache:
                 return {
                     "success": False,
                     "error": "No cached highlights found",
@@ -661,7 +540,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             layers_to_keep = []
             layers_to_remove = []
 
-            for entry in highlight_cache[cache_key]:
+            for entry in pcb_manager.highlight_cache[cache_key]:
                 if layers is None or entry["layer"] in layers:
                     all_item_ids.extend(entry["item_ids"])
                     layers_cleared.add(entry["layer"])
@@ -670,29 +549,24 @@ def register_graph_tools(mcp: FastMCP) -> None:
                     layers_to_keep.append(entry)
 
             if not all_item_ids:
-                del highlight_cache[cache_key]
+                del pcb_manager.highlight_cache[cache_key]
                 return {
                     "success": False,
                     "error": "No items to delete",
                     "info": "if something was not deletet just hit Ctr + Z to revert the last changes or remove the highlights manually",
                 }
 
-            graph, _ = get_data(project_path, schematic_path)
-            unmark_result = graph.unmark_path(all_item_ids)
+            unmark_result = pcb_manager.unmark_path(all_item_ids)
 
             paths_cleared = len(layers_to_remove)
             if layers_to_keep:
-                highlight_cache[cache_key] = layers_to_keep
+                pcb_manager.highlight_cache[cache_key] = layers_to_keep
             else:
-                del highlight_cache[cache_key]
-
-            if ctx:
-                await ctx.report_progress(100, 100)
+                del pcb_manager.highlight_cache[cache_key]
 
             return {
                 "success": unmark_result["success"],
                 "project_path": project_path,
-                "schematic_path": schematic_path,
                 "deleted_items": unmark_result["deleted_items"],
                 "paths_cleared": paths_cleared,
                 "layers_cleared": list(layers_cleared),
@@ -704,8 +578,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
             }
 
         except Exception as e:
-            if ctx:
-                ctx.info(f"Error marking path: {str(e)}")
             return {"success": False, "error": str(e)}
 
     def auto_select_layer(project_path: str, available_layers: list[str]) -> str:
@@ -716,8 +588,8 @@ def register_graph_tools(mcp: FastMCP) -> None:
         """
         cache_key = f"{project_path}:highlights"
 
-        if cache_key in highlight_cache:
-            used_layers = {h["layer"] for h in highlight_cache[cache_key]}
+        if cache_key in pcb_manager.highlight_cache:
+            used_layers = {h["layer"] for h in pcb_manager.highlight_cache[cache_key]}
 
             for layer in available_layers:
                 if layer not in used_layers:
