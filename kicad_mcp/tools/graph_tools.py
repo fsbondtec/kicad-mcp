@@ -25,15 +25,23 @@ pcb_manager = PcbHighlightManager()
 
 
 def get_data(project_path: str, schematic_path: str) -> tuple[CircuitGraph, Dict]:
-    """Get cached graph or create new one if not exists.
+    """
+    Get a cached circuit graph or create a new one if it does not exist or has changed.
+
+    This function parses the KiCad schematic into a structured format and builds a 
+    logical CircuitGraph. If the file hasn't changed, the 
+    cached graph is returned immediately.
 
     Args:
-        project_path: Path to the project
-        schematic_path: Path to the schematic file
+        project_path (str): Absolute or relative path to the KiCad project directory.
+        schematic_path (str): Path to the specific KiCad schematic file (.kicad_sch).
 
     Returns:
-        Tuple of (CircuitGraph, structured_data)
+        tuple[CircuitGraph, Dict]: A tuple containing:
+            - The instantiated CircuitGraph object representing the schematic logic.
+            - A dictionary containing the structured raw data parsed from the netlist.
     """
+
     cache_key = f"{project_path}:{schematic_path}"
 
     # Check if cache and file hasn't been modified
@@ -71,22 +79,33 @@ def hash_file(path):
 
 
 def register_graph_tools(mcp: FastMCP) -> None:
-    """Register graph-related tools with the MCP server.
+    """
+    Register all graph-related and PCB-highlighting tools with the FastMCP server.
+
+    Registers tools for extracting network graphs, 
+    finding paths, analyzing functional blocks, and marking/unmarking paths on the PCB.
 
     Args:
-        mcp: The FastMCP server instance
+        mcp (FastMCP): The active FastMCP server instance.
     """
 
     @mcp.tool()
     async def get_netGraph(project_path: str, schematic_path: str):
-        """Get the complete network graph of a KiCad schematic.
+        """
+        Extract the complete network graph (nodes and edges) of a KiCad schematic.
 
         Args:
-            schematic_path: Path to the KiCad schematic file (.kicad_sch)
+            project_path (str): Path to the base KiCad project directory.
+            schematic_path (str): Path to the target KiCad schematic file (.kicad_sch).
 
         Returns:
-            Dictionary with nodes, edges, and adjacency list or error message
+            Dict[str, Any]: A dictionary containing:
+                - success (bool): True if the graph was successfully extracted.
+                - nodes (list): A list of all component nodes in the circuit.
+                - adjacency_list (dict): The connectivity mapping between components.
+                - error (str, optional): Error message if extraction failed.
         """
+
         try:
             if not schematic_path:
                 return {"success": False, "error": "Schematic path cannot be empty"}
@@ -130,20 +149,27 @@ def register_graph_tools(mcp: FastMCP) -> None:
         max_depth: int,
         ignore_power: bool,
     ) -> Dict:
-        """Find the shortest path between two components in a circuit.
+        """
+        Find the shortest logical path between two components in a circuit.
 
-        This tool analyzes the circuit netlist and finds the connection path
-        between two specified components.
+        This tool traverses the logical circuit graph to find a connection route 
+        between a start and an end component.
 
         Args:
-            schematic_path: Path to the KiCad schematic file (.kicad_sch)
-            start_component: Starting component reference (e.g., "R1")
-            end_component: Ending component reference (e.g., "U3")
-            abstraction_level: high | medium | low -> filter the graph based on abstraction level
-            max_depth: Maximum number of components in the path
+            project_path (str): Path to the KiCad project directory.
+            schematic_path (str): Path to the KiCad schematic file (.kicad_sch).
+            start_component (str): The reference designator of the starting component (e.g., "R1").
+            end_component (str): The reference designator of the ending component (e.g., "U3").
+            max_depth (int): The maximum number of hops/components to traverse before aborting.
+            ignore_power (bool): If True, ignores common power nets (GND, VCC, etc.) to 
+                prevent returning trivial but useless paths across the power plane.
 
         Returns:
-            Dictionary with path information or error message
+            Dict[str, Any]: A dictionary containing:
+                - success (bool): True if a path was found.
+                - path (list): The list of component references forming the path.
+                - path_length (int): The number of components in the path.
+                - error (str, optional): Error message if no path was found or invalid data.
         """
 
         if not os.path.exists(schematic_path):
@@ -199,12 +225,26 @@ def register_graph_tools(mcp: FastMCP) -> None:
         radius: int,
     ) -> Dict:
         """
-        Analyze the functional block around a given component in a schematic.
+        Analyze the functional block (neighborhood) around a given component.
 
-        This function parses a schematic netlist, builds a circuit graph, and performs
-        a neighborhood analysis around a specified central component. The goal is to
-        identify all components (and optionally nets) within a given connection radius,
-        providing the structural basis for Functional Block Analysis.
+        Builds the circuit graph and extracts all adjacent components and nets 
+        within a specified connection radius from a central component. Useful for 
+        understanding sub-circuits (e.g., finding all parts belonging to a voltage regulator).
+
+        Args:
+            project_path (str): Path to the KiCad project directory.
+            schematic_path (str): Path to the KiCad schematic file (.kicad_sch).
+            center_component (str): The reference designator of the central component.
+            ignore_power (bool): If True, power nets are ignored during traversal.
+            radius (int): The maximum connection depth (hops) to explore around the center.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing:
+                - success (bool): True if neighbors were successfully identified.
+                - neighborhood (dict): Detailed mapping of connected components and nets.
+                - center_component (str): The specified center component.
+                - radius (int): The explored radius.
+                - error (str, optional): Error message if extraction failed.
         """
 
         if not os.path.exists(schematic_path):
@@ -257,25 +297,28 @@ def register_graph_tools(mcp: FastMCP) -> None:
         svg_stroke_color: str = "#FF4400",
         svg_stroke_width: float = 0.4,
     ) -> list:
-        """Find the shortest path between two components with wire segment details.
+        """
+        Find a path between two components and visualize it via an SVG/JPG render.
 
-        This tool analyzes the circuit netlist and finds the connection path
-        between two specified components, including the physical wire segments
-        that connect them in the schematic. The Paths can be written in a svg file und be presented in claude response.
+        Finds the shortest logical path, retrieves the physical wire segments connecting 
+        them from the schematic, and optionally renders an image highlighting this path 
+        over the schematic's SVG representation using pyvips.
 
         Args:
-            project_path: Path to the KiCad project file (.kicad_pro)
-            schematic_path: Path to the KiCad schematic file (.kicad_sch)
-            start_component: Starting component reference (e.g., "R1")
-            end_component: Ending component reference (e.g., "U3")
-            max_depth: Maximum number of components in the path
-            ignore_power: If true, ignore power connections in path finding
-            draw_svg: bool = True, writes in svg File und returns jpeg in Response
-            svg_stroke_color: str = "#FF4400" default stroke color is red
-            svg_stroke_width: float = 0.4 default stroke weight
+            project_path (str): Path to the KiCad project directory.
+            schematic_path (str): Path to the KiCad schematic file (.kicad_sch).
+            start_component (str): Starting component reference (e.g., "R1").
+            end_component (str): Ending component reference (e.g., "U3").
+            max_depth (int): Maximum component hops in path finding.
+            ignore_power (bool): If True, ignore power connections.
+            draw_svg (bool, optional): If True, generates an SVG and converts it to a JPG image. Defaults to True.
+            svg_stroke_color (str, optional): Hex color code for the path highlight. Defaults to "#FF4400".
+            svg_stroke_width (float, optional): Stroke weight for the path highlight. Defaults to 0.4.
 
         Returns:
-            List with image and text information of Path
+            List[Any]: A mixed list of `TextContent` (for logs, metadata, and path data) 
+                and `ImageContent` (base64 encoded JPEG images) designed to be directly 
+                returned to the LLM client.
         """
 
         if not os.path.exists(project_path):
@@ -451,15 +494,27 @@ def register_graph_tools(mcp: FastMCP) -> None:
         layer: str | None,
     ) -> Dict[str, Any]:
         """
-        Mark the given path in KiCad pcb File on a User Layer.
+        Highlight a specified list of nets on the active KiCad PCB layout.
+
+        This tool communicates with the KiCad PCB editor instance to visually mark
+        the tracks corresponding to the given nets. The highlights are drawn on a user/eco layer, 
+        making them easy to spot. State is cached internally so they can be removed later.
 
         Args:
-            schematic_path: Path to the KiCad schematic file (.kicad_sch)
-            path_nets: simple list of nets to mark
-            layer: Optional specific layer name (e.g., "Eco1.User"). If None, auto-select.
+            project_path (str): Path to the KiCad project directory (used for caching IDs).
+            path_nets (list): A list of net names (strings) that should be highlighted.
+            layer (str | None): The specific KiCad layer name to draw on (e.g., "Eco1.User").
+                If None is provided, the function will automatically select an available layer.
 
         Returns:
-            Dictionary with success status
+            Dict[str, Any]: A dictionary containing:
+                - success (bool): True if the operation succeeded and items were drawn.
+                - project_path (str): The project path reference.
+                - highlighted_nets (list): The specific nets that were successfully matched and drawn.
+                - used_layer (str): The actual layer on which the highlights were drawn.
+                - currently_used_layers (list): Layers currently occupied by highlights in this project.
+                - created_items_len (int): The number of individual board segments created.
+                - error (str, optional): Aggregated error messages if the operation failed.
         """
         try:
            
@@ -515,13 +570,25 @@ def register_graph_tools(mcp: FastMCP) -> None:
         project_path: str, layers: list[str] | None
     ) -> Dict[str, Any]:
         """
-        Unmark all paths that are on the given layers in the Kicad Project pcb File
+        Remove highlighted paths from the active KiCad PCB layout.
+
+        Uses the internal cache generated by `highlight_path` to find the KiCad object IDs
+        of the previously drawn highlight segments and deletes them. Can target specific 
+        layers or clear all highlights for the given project.
 
         Args:
-            the layers where the paths should be drawn on 
+            project_path (str): Path to the KiCad project directory (used to access the cache).
+            layers (list[str] | None): A list of layer names to clear (e.g., ["Eco1.User"]). 
+                If None is provided, highlights across ALL tracked layers are deleted.
 
         Returns:
-            Dictionary with success status
+            Dict[str, Any]: A dictionary containing:
+                - success (bool): True if items were successfully removed.
+                - project_path (str): The relevant project path.
+                - deleted_items (int): Total number of board segments deleted.
+                - paths_cleared (int): Number of distinct path groupings removed.
+                - layers_cleared (list): The names of the layers that were cleared.
+                - error/errors (list/str, optional): Error messages or failure reasons.
         """
         try:
 
@@ -582,9 +649,22 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
     def auto_select_layer(project_path: str, available_layers: list[str]) -> str:
         """
-        Automatically select next unused user layer for highlighting.
+        Automatically select the next unused user/eco layer for PCB highlighting.
 
-        Prefers Eco1.User, Eco2.User, then User.1-9 in order.
+        Checks the active project's highlight cache to determine which layers are 
+        currently occupied by drawn paths. It iterates through the provided available 
+        layers and returns the first one that is completely empty.
+
+        If all preferred layers are in use or the list is empty, it falls back to 
+        returning the first available layer or a hardcoded default ("Eco1.User").
+
+        Args:
+            project_path (str): Path to the KiCad project (used as the cache key).
+            available_layers (list[str]): A list of all enabled user/eco layers on the board, 
+                ideally ordered by preference (e.g., ["Eco1.User", "Eco2.User", ...]).
+
+        Returns:
+            str: The canonical name of the selected target layer.
         """
         cache_key = f"{project_path}:highlights"
 

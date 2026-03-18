@@ -112,25 +112,19 @@ def register_my_tools(mcp: FastMCP) -> None:
     """Register my custom tools with the MCP server."""
     
     @mcp.tool()
-    async def my_custom_tool(parameter: str, ctx: Context) -> Dict[str, Any]:
+    async def my_custom_tool(parameter: str) -> Dict[str, Any]:
         """Description of what this tool does.
         
         Args:
             parameter: Description of parameter
-            ctx: MCP context for progress reporting
             
         Returns:
             Dictionary with tool results
         """
-        # Report progress to the user
-        await ctx.report_progress(10, 100)
-        ctx.info(f"Starting operation on {parameter}")
         
         # Implementation goes here
         
         # Complete progress
-        await ctx.report_progress(100, 100)
-        ctx.info("Operation complete")
         
         return {
             "success": True,
@@ -190,41 +184,6 @@ def create_server() -> FastMCP:
     # ...
     register_my_prompts(mcp)
     # ...
-```
-
-## Using the Lifespan Context
-
-The KiCad MCP Server uses a typed lifespan context to share data across requests:
-
-```python
-from kicad_mcp.context import KiCadAppContext
-
-@mcp.tool()
-def my_tool(parameter: str, ctx: Context) -> Dict[str, Any]:
-    """Example tool using lifespan context."""
-    # Access the typed context
-    app_context: KiCadAppContext = ctx.request_context.lifespan_context
-    
-    # Check if KiCad modules are available
-    if app_context.kicad_modules_available:
-        # Use KiCad Python modules
-        pass
-    else:
-        # Fall back to alternative method
-        pass
-    
-    # Use the cache to store expensive results
-    cache_key = f"my_operation_{parameter}"
-    if cache_key in app_context.cache:
-        return app_context.cache[cache_key]
-    
-    # Perform operation
-    result = {}
-    
-    # Cache the result
-    app_context.cache[cache_key] = result
-    
-    return result
 ```
 
 ## Testing

@@ -180,6 +180,9 @@ The KiCad MCP Server provides several key features, each with detailed documenta
 - **Path Visualisation in PCB File**: Generate visual representations of circuit Paths in PCB
   - *Example:* "Can you mark this Path in my Project" → Displays a visual representation of the Path on one of the User Layers
 
+_ **schematic path visualisation in svg files**: generate visual representation of paths in schematic svg plotting
+  _ *Example*: "Can you find the high voltage path through my project and highlight it in schematic?" -> plots with kicad cli all schematics in this project as svg, adds path to highlight those connections
+
 For more examples and details on each feature, see the dedicated guides in the documentation. You can also ask the LLM what tools it has access to!
 
 ## Natural Language Interaction
@@ -208,6 +211,7 @@ Detailed documentation for each feature is available in the `docs/` directory:
 - [PCB Design Analysis](docs/analysis_guide.md)
 - [Design Rule Checking (DRC)](docs/drc_guide.md)
 - [Highlighting Path in PCB](docs/visualize_path.md)
+- [Highlight Path in plotted schematic file](docs/visualize_path_schematic.md)
 
 ## Configuration
 

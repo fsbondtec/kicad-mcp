@@ -110,6 +110,9 @@ def build_svg_map_from_project_files(project_files: Dict) -> Dict[str, str]:
 
 
 def segments_to_svg_path(segments: List[Dict]) -> str:
+    """
+    Converts the wire segments of the wire graph to svg path 
+    """
     d_parts = []
     for seg in segments:
         start_node = seg.get("start", {})
@@ -146,6 +149,8 @@ def build_path_element(d: str, style: Dict, path_id: str) -> str:
     )
 
 def inject_into_svg(svg_path: str, new_elements: str, path_id_prefix: str) -> bool:
+    """Add path before svg closing tag"""
+
     with open(svg_path, "r", encoding="utf-8") as f:
         content = f.read()
 

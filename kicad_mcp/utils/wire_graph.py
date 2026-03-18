@@ -39,7 +39,7 @@ class WireSegment:
         if isinstance(n1, str) and isinstance(n2, str):
             return n1 == n2
         
-        #when comparing component pins only reference and pin number are important no coordiantes needed 
+        #when comparing component pins only reference and pin number are important
         if (isinstance(n1, tuple) and len(n1) == 2 and isinstance(n1[0], str) and
             isinstance(n2, tuple) and len(n2) == 2 and isinstance(n2[0], str)):
             return n1[0] == n2[0] and n1[1] == n2[1]
@@ -82,7 +82,7 @@ class GlobalWireGraph:
         self.component_pins[comp_ref] = pins
 
     def find_wire_path_between_components(self, comp_a: str, comp_b: str, allowed_components: set = None) -> Optional[List]:
-        """BFS von allen Pins von comp_a bis irgendeinen Pin von comp_b"""
+        """BFS from all pins of comp_a to pin of comp_b"""
         
         if comp_a not in self.component_pins or comp_b not in self.component_pins:
             return None
@@ -112,7 +112,7 @@ class GlobalWireGraph:
             if isinstance(current, tuple) and isinstance(current[0], str):
                 comp_ref, pin_num = current
 
-                 # only Hop when component in logic Path
+                # only Hop when component in logic Path
                 if allowed_components is not None and comp_ref not in allowed_components:
                     continue
                 
@@ -191,6 +191,7 @@ class GlobalWireGraph:
             
                     wire_id += 1
         
+        # busses that connect labels and normal wire connections
         for item in sch.busEntries:
             start_pos = (item.position.X, item.position.Y)
             end_pos = (item.position.X + item.size.X, item.position.Y + item.size.Y)
@@ -206,6 +207,7 @@ class GlobalWireGraph:
         return wire_id
 
     def collect_labels(self, sch: Schematic, sch_path: str):
+        """collects all the labels of the sheets"""
        
         for item in sch.globalLabels:
             name = item.text.strip()
@@ -230,6 +232,7 @@ class GlobalWireGraph:
                 self._label_positions[sch_path][f"hier:{name}"].append(pos)
 
     def connect_hierarchical_labels(self):
+        """makes a virtual connection between the matching hierarchical labels of the sheets"""
         hier_label_positions: Dict[str, List[Tuple[float, float]]] = defaultdict(list)
 
         for sch_path, label_dict in self._label_positions.items():
@@ -311,6 +314,7 @@ class GlobalWireGraph:
         return None
     
     def _resolve_position(self, pos: Tuple[float, float], tolerance: float = 0.1) -> NodeType:
+        "matches the positions with component pins or returns only the position if no pin matches"
         for comp_ref, pins in self.component_pins.items():
             for pin_num, pin_pos in pins.items():
                 dist = ((pin_pos[0] - pos[0])**2 + (pin_pos[1] - pos[1])**2)**0.5
