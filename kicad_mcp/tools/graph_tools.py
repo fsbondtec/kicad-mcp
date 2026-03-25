@@ -282,7 +282,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
         except Exception as e:
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
     
-    @mcp.tool()
+    @mcp.tool(app=AppConfig(resource_uri=IMAGE_VIEW_URI))
     async def get_circuit_path_with_wires(
         project_path: str,
         schematic_path: str,
@@ -291,16 +291,13 @@ def register_graph_tools(mcp: FastMCP) -> None:
         max_depth: int,
         ignore_power: bool,
         svg_stroke_color: str = "#FF4400",
-        svg_stroke_width: float = 0.4,
-    ) -> Dict[str, Any]:
+        svg_stroke_width: float = 1.0,
+    ) -> str:
         """
-        Find a path between two components including wire segments, and generate SVGs.
-
-        Returns the logical path, wire segments, and SVG viewer URLs.
-        Call display_wire_graph afterwards with the returned svg_urls to open the viewer.
+        Find a path between two components, generate SVGs and display them in the viewer.
 
         Args:
-            project_path (str): Path to the KiCad project directory has neccessary (.kicad_pro) path.
+            project_path (str): Path to the KiCad project file (.kicad_pro).
             schematic_path (str): Path to the KiCad schematic file (.kicad_sch).
             start_component (str): Starting component reference (e.g., "R1").
             end_component (str): Ending component reference (e.g., "U3").
@@ -310,26 +307,26 @@ def register_graph_tools(mcp: FastMCP) -> None:
             svg_stroke_width (float, optional): Stroke weight for the path highlight. Defaults to 0.4.
 
         Returns:
-            Dict with path, wire_segments_formatted, svg_urls and svg_names for display_wire_graph.
+            str: JSON payload for the SVG viewer.
         """
 
         if not project_path.endswith('.kicad_pro'):
             project_path = f"{project_path}.kicad_pro"
 
         if not os.path.exists(project_path):
-            return {"success": False, "error": f"Project not found: {project_path}"}#
-        
+            return json.dumps({"error": f"Project not found: {project_path}"})
+
         if not schematic_path.endswith('.kicad_sch'):
             schematic_path = f"{schematic_path}.kicad_sch"
 
         if not os.path.exists(schematic_path):
-            return {"success": False, "error": f"Schematic not found: {schematic_path}"}
+            return json.dumps({"error": f"Schematic not found: {schematic_path}"})
 
         if not start_component or not start_component.strip():
-            return {"success": False, "error": "Start component reference cannot be empty"}
+            return json.dumps({"error": "Start component reference cannot be empty"})
 
         if not end_component or not end_component.strip():
-            return {"success": False, "error": "End component reference cannot be empty"}
+            return json.dumps({"error": "End component reference cannot be empty"})
 
         try:
             plot_svg(project_path)
@@ -344,12 +341,9 @@ def register_graph_tools(mcp: FastMCP) -> None:
             )
 
             if not path_result.get("success"):
-                return {
-                    "success": False,
+                return json.dumps({
                     "error": f"No path found between {start_component} and {end_component}",
-                    "start_component": start_component,
-                    "end_component": end_component,
-                }
+                })
 
             wire_segments_formatted = path_result.get("wire_segments_formatted", [])
             wire_only = [
@@ -357,17 +351,14 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 if s["type"] == "wire" and s.get("sheet", "virtual") != "virtual"
             ]
 
-            result = {
-                "success": True,
-                "path": path_result.get("path", []),
-                "path_length": path_result.get("path_length", 0),
-                "wire_segments_formatted": wire_segments_formatted,
-                "svg_urls": [],
-                "svg_names": [],
-            }
+            summary = (
+                f"{start_component} → {end_component} "
+                f"({path_result.get('path_length', 0)} components): "
+                f"{' → '.join(path_result.get('path', []))}"
+            )
 
             if not wire_only:
-                return result
+                return json.dumps({"error": f"No wire segments found. {summary}"})
 
             project_files = get_project_files(project_path)
             svg_map = build_svg_map_from_project_files(project_files)
@@ -381,54 +372,29 @@ def register_graph_tools(mcp: FastMCP) -> None:
             )
 
             if not svg_result or not svg_result.get("success"):
-                result["svg_error"] = svg_result.get("errors", []) if svg_result else []
-                return result
+                errors = svg_result.get("errors", []) if svg_result else []
+                return json.dumps({"error": f"SVG generation failed: {errors}"})
 
             written = [f["svg"] for f in svg_result.get("written_files", []) if os.path.exists(f["svg"])]
 
-            if written:
-                start_or_update_file_server(os.path.dirname(os.path.abspath(written[0])))
-                result["svg_urls"]  = [f"http://localhost:{FILE_SERVER_PORT}/{urllib.parse.quote(os.path.basename(p))}" for p in written]
-                result["svg_names"] = [os.path.basename(p) for p in written]
+            if not written:
+                return json.dumps({"error": "SVG files were not written to disk."})
 
-            return result
+            start_or_update_file_server(os.path.dirname(os.path.abspath(written[0])))
+            urls  = [f"http://localhost:{FILE_SERVER_PORT}/{urllib.parse.quote(os.path.basename(p))}" for p in written]
+            names = [os.path.basename(p) for p in written]
+
+            return json.dumps({"urls": urls, "names": names, "summary": summary})
 
         except FileNotFoundError as e:
-            return {"success": False, "error": f"File not found: {str(e)}"}
-
-        except ValueError as e:
-            return {"success": False, "error": f"Invalid data: {str(e)}"}
-
-        except KeyError as e:
-            return {"success": False, "error": f"Missing required data: {str(e)}"}
+            return json.dumps({"error": f"File not found: {str(e)}"})
 
         except Exception as e:
             import traceback
-            return {
-                "success": False,
-                "error": f"Error finding circuit path with wires: {str(e)}",
+            return json.dumps({
+                "error": f"Error: {str(e)}",
                 "traceback": traceback.format_exc(),
-            }
-
-    @mcp.tool(app=AppConfig(resource_uri=IMAGE_VIEW_URI))
-    def display_wire_graph(svg_urls: list, svg_names: list) -> str:
-        """
-        Display SVG wire-graph visualizations in the interactive viewer.
-
-        Call this after get_circuit_path_with_wires to open the HTML viewer.
-        Pass svg_urls and svg_names from that tool's response directly.
-
-        Args:
-            svg_urls (list): HTTP URLs to the SVG files (from get_circuit_path_with_wires).
-            svg_names (list): Display names for each SVG sheet.
-
-        Returns:
-            str: JSON payload for the HTML viewer.
-        """
-        if not svg_urls:
-            return json.dumps({"error": "No SVG URLs provided."})
-
-        return json.dumps({"urls": svg_urls, "names": svg_names})
+            })
 
 
     @mcp.tool()
