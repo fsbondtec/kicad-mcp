@@ -2,23 +2,20 @@
 Netlist extraction, graph creation anf analysis of project
 """
 
+import json
 import os
+import urllib.parse
 from typing import Dict, Any
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
+from fastmcp.server.apps import AppConfig
 import hashlib
-import base64
-from mcp.types import TextContent, ImageContent
 
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
 from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files, plot_svg
 from kicad_mcp.utils.file_utils import get_project_files
 from kicad_mcp.utils.pcb_highlight_utils import PcbHighlightManager
-
-
-
-
-import pyvips
+from kicad_mcp.utils.svg_file_server import IMAGE_VIEW_URI, FILE_SERVER_PORT, start_or_update_file_server
 
 project_cache: Dict[str, Dict[str, Any]] = {}
 pcb_manager = PcbHighlightManager()
@@ -293,57 +290,57 @@ def register_graph_tools(mcp: FastMCP) -> None:
         end_component: str,
         max_depth: int,
         ignore_power: bool,
-        draw_svg: bool = True,
         svg_stroke_color: str = "#FF4400",
         svg_stroke_width: float = 0.4,
-    ) -> list:
+    ) -> Dict[str, Any]:
         """
-        Find a path between two components and visualize it via an SVG/JPG render.
+        Find a path between two components including wire segments, and generate SVGs.
 
-        Finds the shortest logical path, retrieves the physical wire segments connecting 
-        them from the schematic, and optionally renders an image highlighting this path 
-        over the schematic's SVG representation using pyvips.
+        Returns the logical path, wire segments, and SVG viewer URLs.
+        Call display_wire_graph afterwards with the returned svg_urls to open the viewer.
 
         Args:
-            project_path (str): Path to the KiCad project directory.
+            project_path (str): Path to the KiCad project directory has neccessary (.kicad_pro) path.
             schematic_path (str): Path to the KiCad schematic file (.kicad_sch).
             start_component (str): Starting component reference (e.g., "R1").
             end_component (str): Ending component reference (e.g., "U3").
             max_depth (int): Maximum component hops in path finding.
             ignore_power (bool): If True, ignore power connections.
-            draw_svg (bool, optional): If True, generates an SVG and converts it to a JPG image. Defaults to True.
-            svg_stroke_color (str, optional): Hex color code for the path highlight. Defaults to "#FF4400".
+            svg_stroke_color (str, optional): Hex color for the path highlight. Defaults to "#FF4400".
             svg_stroke_width (float, optional): Stroke weight for the path highlight. Defaults to 0.4.
 
         Returns:
-            List[Any]: A mixed list of `TextContent` (for logs, metadata, and path data) 
-                and `ImageContent` (base64 encoded JPEG images) designed to be directly 
-                returned to the LLM client.
+            Dict with path, wire_segments_formatted, svg_urls and svg_names for display_wire_graph.
         """
 
+        if not project_path.endswith('.kicad_pro'):
+            project_path = f"{project_path}.kicad_pro"
+
         if not os.path.exists(project_path):
-            return [{"success": False, "error": f"Project not found: {project_path}"}]
+            return {"success": False, "error": f"Project not found: {project_path}"}#
+        
+        if not schematic_path.endswith('.kicad_sch'):
+            schematic_path = f"{schematic_path}.kicad_sch"
 
         if not os.path.exists(schematic_path):
-            return [{"success": False, "error": f"Schematic not found: {schematic_path}"}]
+            return {"success": False, "error": f"Schematic not found: {schematic_path}"}
 
         if not start_component or not start_component.strip():
-            return [{"success": False, "error": "Start component reference cannot be empty"}]
+            return {"success": False, "error": "Start component reference cannot be empty"}
 
         if not end_component or not end_component.strip():
-            return [{"success": False, "error": "End component reference cannot be empty"}]
+            return {"success": False, "error": "End component reference cannot be empty"}
 
         try:
             plot_svg(project_path)
 
             graph, _ = get_data(project_path, schematic_path)
 
-            # Find path with wire segments
             path_result = graph.find_path_with_wire_segments(
                 start=start_component,
                 end=end_component,
                 ignore_power=ignore_power,
-                max_depth=max_depth
+                max_depth=max_depth,
             )
 
             if not path_result.get("success"):
@@ -355,136 +352,83 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 }
 
             wire_segments_formatted = path_result.get("wire_segments_formatted", [])
-                
-            # Svg feature 
-            svg_success = False
-            written_svg_paths = []
-            svg_errors = []
-
-            if draw_svg:
-                # debugging 
-                wire_segments_formatted = path_result.get("wire_segments_formatted", [])
-                
-                wire_only = [
-                    s for s in wire_segments_formatted
-                    if s["type"] == "wire" and s.get("sheet", "virtual") != "virtual"
-                ]
-
-                svg_success = False
-                written_svg_paths = []
-                svg_errors = []
-                debug_info = []
-
-                debug_info.append(f"draw_svg flag is True.")
-                debug_info.append(f"Total formatted segments received: {len(wire_segments_formatted)}")
-                debug_info.append(f"Filtered 'wire_only' segments (non-virtual): {len(wire_only)}")
-
-                if wire_only:
-                    project_files = get_project_files(project_path)
-                    svg_map = build_svg_map_from_project_files(project_files)
-                    
-                    debug_info.append(f"SVG Map built with {len(svg_map)} entries.")
-
-                    svg_result = draw_path_to_svg(
-                        wire_segments  = wire_only,
-                        project_path   = project_path,
-                        path_id_prefix = f"{start_component}_to_{end_component}",
-                        style          = {
-                            "stroke":       svg_stroke_color,
-                            "stroke_width": svg_stroke_width,
-                        },
-                        svg_map=svg_map
-                    )
-                    
-                    if svg_result:
-                        svg_success = svg_result.get("success", False)
-                        written_svg_paths = [f["svg"] for f in svg_result.get("written_files", [])]
-                        
-                        raw_errors = svg_result.get("errors", [])
-                        skipped_sheets = svg_result.get("skipped_sheets", [])
-                        skipped_reasons = [s.get("reason", "Unknown reason") for s in skipped_sheets if isinstance(s, dict)]
-                        svg_errors = raw_errors + skipped_reasons
-
-                        debug_info.append(f"draw_path_to_svg returned success: {svg_success}")
-                        debug_info.append(f"Written SVG files count: {len(written_svg_paths)}")
-                        if svg_errors:
-                            debug_info.append(f"SVG generation errors/skips: {svg_errors}")
-
-            
-            summary = (
-                f"Path found with {path_result.get('path_length', 0)} components.\n"
-                f"Logical Path: {' -> '.join(path_result.get('path', []))}\n\n"
-                f"--- Debug Info ---\n"
-                + "\n".join(debug_info) + "\n"
-                f"------------------\n"
-            )
-            
-            if svg_success and written_svg_paths:
-                summary += "\nSVG(s) successfully generated and saved to:\n" + "\n".join(written_svg_paths)
-            
-            content_list = [
-                TextContent(type="text", text=summary)
+            wire_only = [
+                s for s in wire_segments_formatted
+                if s["type"] == "wire" and s.get("sheet", "virtual") != "virtual"
             ]
 
-            if svg_success and written_svg_paths:
-                for svg_file_path in written_svg_paths:
-                    if not os.path.exists(svg_file_path):
-                        content_list.append(
-                            TextContent(type="text", text=f"File IO Error: SVG file does not exist at path: {svg_file_path}")
-                        )
-                        continue
-                        
-                    try:
-                        content_list.append(TextContent(type="text", text=f"Starting pyvips conversion for: {os.path.basename(svg_file_path)}"))
-                        
-                        image = pyvips.Image.new_from_file(svg_file_path, dpi=75)
-                        
-                        if image.hasalpha():
-                            image = image.flatten(background=[255, 255, 255]) #white background
-                        
-                        jpg_bytes = image.write_to_buffer(".jpg[Q=60]")
-                        encoded_string = base64.b64encode(jpg_bytes).decode('utf-8')
-                        
-                        sheet_name = os.path.basename(svg_file_path)
-                        content_list.append(TextContent(type="text", text=f"Rendered Sheet: {sheet_name}"))
-                        
-                        content_list.append(
-                            ImageContent(
-                                type="image",
-                                data=encoded_string,
-                                mimeType="image/jpeg"
-                            )
-                        )
-                        
-                    except Exception as e:
-                        import traceback
-                        content_list.append(
-                            TextContent(
-                                type="text", 
-                                text=f"Error during pyvips SVG->JPG conversion for {svg_file_path}:\n{str(e)}\n{traceback.format_exc()}"
-                            )
-                        )
+            result = {
+                "success": True,
+                "path": path_result.get("path", []),
+                "path_length": path_result.get("path_length", 0),
+                "wire_segments_formatted": wire_segments_formatted,
+                "svg_urls": [],
+                "svg_names": [],
+            }
 
-            return content_list
+            if not wire_only:
+                return result
 
-        
+            project_files = get_project_files(project_path)
+            svg_map = build_svg_map_from_project_files(project_files)
+
+            svg_result = draw_path_to_svg(
+                wire_segments=wire_only,
+                project_path=project_path,
+                path_id_prefix=f"{start_component}_to_{end_component}",
+                style={"stroke": svg_stroke_color, "stroke_width": svg_stroke_width},
+                svg_map=svg_map,
+            )
+
+            if not svg_result or not svg_result.get("success"):
+                result["svg_error"] = svg_result.get("errors", []) if svg_result else []
+                return result
+
+            written = [f["svg"] for f in svg_result.get("written_files", []) if os.path.exists(f["svg"])]
+
+            if written:
+                start_or_update_file_server(os.path.dirname(os.path.abspath(written[0])))
+                result["svg_urls"]  = [f"http://localhost:{FILE_SERVER_PORT}/{urllib.parse.quote(os.path.basename(p))}" for p in written]
+                result["svg_names"] = [os.path.basename(p) for p in written]
+
+            return result
+
         except FileNotFoundError as e:
-            return [{"success": False, "error": f"File not found: {str(e)}"}]
+            return {"success": False, "error": f"File not found: {str(e)}"}
 
         except ValueError as e:
-            return [{"success": False, "error": f"Invalid data: {str(e)}"}]
+            return {"success": False, "error": f"Invalid data: {str(e)}"}
 
         except KeyError as e:
-            return [{"success": False, "error": f"Missing required data: {str(e)}"}]
+            return {"success": False, "error": f"Missing required data: {str(e)}"}
 
         except Exception as e:
             import traceback
-            return [{
+            return {
                 "success": False,
                 "error": f"Error finding circuit path with wires: {str(e)}",
-                "traceback": traceback.format_exc()
-            }]
+                "traceback": traceback.format_exc(),
+            }
 
+    @mcp.tool(app=AppConfig(resource_uri=IMAGE_VIEW_URI))
+    def display_wire_graph(svg_urls: list, svg_names: list) -> str:
+        """
+        Display SVG wire-graph visualizations in the interactive viewer.
+
+        Call this after get_circuit_path_with_wires to open the HTML viewer.
+        Pass svg_urls and svg_names from that tool's response directly.
+
+        Args:
+            svg_urls (list): HTTP URLs to the SVG files (from get_circuit_path_with_wires).
+            svg_names (list): Display names for each SVG sheet.
+
+        Returns:
+            str: JSON payload for the HTML viewer.
+        """
+        if not svg_urls:
+            return json.dumps({"error": "No SVG URLs provided."})
+
+        return json.dumps({"urls": svg_urls, "names": svg_names})
 
 
     @mcp.tool()

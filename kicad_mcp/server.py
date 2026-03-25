@@ -14,6 +14,7 @@ from fastmcp import FastMCP
 from kicad_mcp.resources.projects import register_project_resources
 from kicad_mcp.resources.files import register_file_resources
 from kicad_mcp.resources.drc_resources import register_drc_resources
+from kicad_mcp.resources.svg_viewer_resources import register_svg_viewer_resources
 
 
 # Import tool handlers
@@ -138,6 +139,7 @@ def create_server() -> FastMCP:
     register_project_resources(mcp)
     register_file_resources(mcp)
     register_drc_resources(mcp)
+    register_svg_viewer_resources(mcp)
 
     # Register tools
     logging.info(f"Registering tools...")
