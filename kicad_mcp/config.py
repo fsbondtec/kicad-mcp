@@ -32,31 +32,53 @@ Dependencies:
     - platform: Operating system detection
 """
 
+import json
 import os
 import platform
+import sys
 
 # Determine operating system for platform-specific configuration
 # Returns 'Darwin' (macOS), 'Windows', 'Linux', or other
 system = platform.system()
 
-# Platform-specific KiCad installation and user directory paths
-# These paths are used for finding KiCad resources and user projects
+# Platform-specific default paths and Claude Extensions Settings directory
 if system == "Darwin":  # macOS
-    KICAD_USER_DIR = os.path.expanduser("~/Documents/KiCad")
-    KICAD_APP_PATH = "/Applications/KiCad/KiCad.app"
+    _CLAUDE_EXTENSIONS_DIR = os.path.expanduser("~/Library/Application Support/Claude/Claude Extensions Settings")
+    _DEFAULT_USER_DIR = os.path.expanduser("~/Documents/KiCad")
+    _DEFAULT_APP_PATH = "/Applications/KiCad/KiCad.app"
 elif system == "Windows":
-    #Edit
-    KICAD_USER_DIR = "C:/Users/{user}/KiCad/9.0/projects"
-    KICAD_APP_PATH = "C:/Program Files/KiCad/9.0/"
-    
+    appdata = os.environ.get("APPDATA") or os.path.expanduser("~/AppData/Roaming")
+    _CLAUDE_EXTENSIONS_DIR = os.path.join(appdata, "Claude", "Claude Extensions Settings")
+    _DEFAULT_USER_DIR = os.path.expanduser("~/KiCad/9.0/projects")
+    _DEFAULT_APP_PATH = "C:/Program Files/KiCad/9.0/"
 elif system == "Linux":
-    KICAD_USER_DIR = os.path.expanduser("~/KiCad")
-    KICAD_APP_PATH = "/usr/share/kicad"
+    _CLAUDE_EXTENSIONS_DIR = os.path.expanduser("~/.config/Claude/Claude Extensions Settings")
+    _DEFAULT_USER_DIR = os.path.expanduser("~/KiCad")
+    _DEFAULT_APP_PATH = "/usr/share/kicad"
 else:
-    # Default to macOS paths if system is unknown for maximum compatibility
-    # This ensures the server can start even on unrecognized platforms
-    KICAD_USER_DIR = os.path.expanduser("~/Documents/KiCad")
-    KICAD_APP_PATH = "/Applications/KiCad/KiCad.app"
+    _CLAUDE_EXTENSIONS_DIR = os.path.expanduser("~/.config/Claude/Claude Extensions Settings")
+    _DEFAULT_USER_DIR = os.path.expanduser("~/Documents/KiCad")
+    _DEFAULT_APP_PATH = "/Applications/KiCad/KiCad.app"
+
+# Load kicad-mcp-config.json from Claude Extensions Settings directory
+_MCP_CONFIG_FILE = os.path.join(_CLAUDE_EXTENSIONS_DIR, "kicad-mcp-config.json")
+_mcp_config = {
+    "KICAD_USER_DIR": _DEFAULT_USER_DIR,
+    "KICAD_APP_PATH": _DEFAULT_APP_PATH,
+}
+try:
+    if os.path.isfile(_MCP_CONFIG_FILE):
+        with open(_MCP_CONFIG_FILE, "r", encoding="utf-8") as _f:
+            _mcp_config.update(json.load(_f))
+    else:
+        os.makedirs(_CLAUDE_EXTENSIONS_DIR, exist_ok=True)
+        with open(_MCP_CONFIG_FILE, "w", encoding="utf-8") as _f:
+            json.dump(_mcp_config, _f, indent=2)
+except Exception as e:
+    print(f"[Warning] Could not load or save config file: {e}", file=sys.stderr)
+
+KICAD_USER_DIR = _mcp_config.get("KICAD_USER_DIR", _DEFAULT_USER_DIR)
+KICAD_APP_PATH = _mcp_config.get("KICAD_APP_PATH", _DEFAULT_APP_PATH)
 
 # Additional search paths from environment variable KICAD_SEARCH_PATHS
 # Users can specify custom project locations as comma-separated paths
