@@ -20,7 +20,7 @@ DEFAULT_STYLE = {
     "stroke_linejoin":"round",
 }
 
-def plot_svg(project_path: str):
+def plot_svg_schematic(project_path: str):
     try:
         cli_path = get_kicad_cli_path(required=True)
     except KiCadCLIError as e:
@@ -44,6 +44,40 @@ def plot_svg(project_path: str):
         "--output", project_dir,
         main_sch_path
     ]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print("export successfull")
+    except subprocess.CalledProcessError as e:
+        print("error when plotting")
+        print(e.stderr if e.stderr else e.stdout)
+
+    
+def plot_svg_pcb(project_path: str):
+    try:
+        cli_path = get_kicad_cli_path(required=True)
+    except KiCadCLIError as e:
+        print("Error searching for cli")
+        return
+    
+    base_path, _ = os.path.splitext(project_path)
+    main_sch_path = f"{base_path}.kicad_pcb"
+
+    project_dir = os.path.dirname(project_path)
+    cam_dir = os.path.join(project_dir, "CAM")
+    output_dir = cam_dir if os.path.isdir(cam_dir) else project_dir
+
+    output_svg = os.path.join(output_dir, "pcb_export.svg")
+
+
+
+    cmd = [
+            cli_path, "pcb", "export", "svg",
+            "--output", output_svg,
+            "--layers", "F.Cu,B.Cu", 
+            "--page-size-mode", "0", #same viewbox as schematic 
+            main_sch_path
+        ]
 
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)

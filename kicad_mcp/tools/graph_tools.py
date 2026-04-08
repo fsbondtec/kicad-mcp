@@ -12,7 +12,7 @@ import hashlib
 
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
-from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files, plot_svg
+from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files, plot_svg_schematic
 from kicad_mcp.utils.file_utils import get_project_files
 from kicad_mcp.utils.pcb_highlight_utils import PcbHighlightManager
 from kicad_mcp.utils.svg_file_server import IMAGE_VIEW_URI, FILE_SERVER_PORT, start_or_update_file_server
@@ -329,7 +329,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return json.dumps({"error": "End component reference cannot be empty"})
 
         try:
-            plot_svg(project_path)
+            plot_svg_schematic(project_path)
 
             graph, _ = get_data(project_path, schematic_path)
 
