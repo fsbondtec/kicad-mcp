@@ -4,9 +4,12 @@ from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
 import sys
 
-
 from kicad_mcp.utils.kicad_cli import *
 from kicad_mcp.utils.file_utils import get_project_files 
+
+from kipy import KiCad
+from kipy.util.units import to_mm
+
 
 OVERLAY_START = "<!-- path_overlay_start -->"
 OVERLAY_END   = "<!-- path_overlay_end -->"
@@ -62,14 +65,14 @@ def plot_svg_pcb(project_path: str):
     
     base_path, _ = os.path.splitext(project_path)
     main_sch_path = f"{base_path}.kicad_pcb"
+    project_name = os.path.basename(base_path)
+
 
     project_dir = os.path.dirname(project_path)
     cam_dir = os.path.join(project_dir, "CAM")
     output_dir = cam_dir if os.path.isdir(cam_dir) else project_dir
 
-    output_svg = os.path.join(output_dir, "pcb_export.svg")
-
-
+    output_svg = os.path.join(output_dir, f"{project_name}_pcb.svg")
 
     cmd = [
             cli_path, "pcb", "export", "svg",
@@ -81,10 +84,12 @@ def plot_svg_pcb(project_path: str):
 
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
+        return output_svg
         print("export successfull")
     except subprocess.CalledProcessError as e:
         print("error when plotting")
         print(e.stderr if e.stderr else e.stdout)
+        return None
 
 
 
@@ -167,6 +172,27 @@ def segments_to_svg_path(segments: List[Dict]) -> str:
         d_parts.append(f"M {sx:.4f} {sy:.4f} L {ex:.4f} {ey:.4f}")
         
     return " ".join(d_parts)
+
+def  tracks_to_svg_path(tracks, nets: list) -> str:
+    """
+    Converts the tracks of the pcb file to svg path 
+    """
+    d_parts = []
+    for track in tracks:
+        net = track.net
+        if not net or net.name not in nets:
+            continue
+        
+        sx, sy = to_mm(track.start.x), to_mm(track.start.y)  
+        ex, ey = to_mm(track.end.x), to_mm(track.end.y)
+    
+        if sx == ex and sy == ey:
+            continue
+        
+        d_parts.append(f"M {sx:.4f} {sy:.4f} L {ex:.4f} {ey:.4f}")
+    
+    return " ".join(d_parts)
+
 
 def build_path_element(d: str, style: Dict, path_id: str) -> str:
     """Creates SVG <path>-Tag as string."""
@@ -287,4 +313,37 @@ def draw_path_to_svg(
             result["errors"].append(f"[{sheet}] svg does not hav </svg>-tag, file was not changed.")
 
     result["success"] = any_written
+    return result
+
+def draw_path_to_pcb_svg(
+    nets: list,
+    svg_path: str,
+    path_id_prefix: str = "mcp_pcb_path",
+    style: Optional[Dict] = None,
+) -> Dict[str, Any]:
+    result = {"success": False, "written_files": [], "errors": []}
+
+    kicad = KiCad()
+    board = kicad.get_board()
+    if not board:
+        result["errors"].append("No board open in KiCad")
+        return result
+
+    tracks = board.get_tracks()
+    active_style = {**DEFAULT_STYLE, **(style or {})}
+
+    d = tracks_to_svg_path(tracks, nets)
+    if not d:
+        result["errors"].append("No matching tracks found for given nets")
+        return result
+
+    element = build_path_element(d, active_style, path_id_prefix)
+    ok = inject_into_svg(svg_path, element, path_id_prefix)
+
+    if ok:
+        result["success"] = True
+        result["written_files"].append(svg_path)
+    else:
+        result["errors"].append("inject_into_svg failed")
+
     return result

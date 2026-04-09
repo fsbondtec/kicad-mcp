@@ -12,13 +12,11 @@ import hashlib
 
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
-from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files, plot_svg_schematic
+from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files, plot_svg_schematic, plot_svg_pcb, draw_path_to_pcb_svg
 from kicad_mcp.utils.file_utils import get_project_files
-from kicad_mcp.utils.pcb_highlight_utils import PcbHighlightManager
 from kicad_mcp.utils.svg_file_server import IMAGE_VIEW_URI, FILE_SERVER_PORT, start_or_update_file_server
 
 project_cache: Dict[str, Dict[str, Any]] = {}
-pcb_manager = PcbHighlightManager()
 
 
 def get_data(project_path: str, schematic_path: str) -> tuple[CircuitGraph, Dict]:
@@ -397,194 +395,61 @@ def register_graph_tools(mcp: FastMCP) -> None:
             })
 
 
-    @mcp.tool()
-    async def highlight_path(
+    @mcp.tool(app=AppConfig(resource_uri=IMAGE_VIEW_URI))
+    async def highlight_pcb_path(
         project_path: str,
         path_nets: list,
-        layer: str | None,
-    ) -> Dict[str, Any]:
+        svg_stroke_color: str = "#FF1493",
+        svg_stroke_width: float = 2.0,
+    ) -> str:
         """
-        Highlight a specified list of nets on the active KiCad PCB layout.
-
-        This tool communicates with the KiCad PCB editor instance to visually mark
-        the tracks corresponding to the given nets. The highlights are drawn on a user/eco layer, 
-        making them easy to spot. State is cached internally so they can be removed later.
+        Highlight a specified list of nets on the PCB layout and display the result as SVG.
 
         Args:
-            project_path (str): Path to the KiCad project directory (used for caching IDs).
+            project_path (str): Path to the KiCad project file (.kicad_pro).
             path_nets (list): A list of net names (strings) that should be highlighted.
-            layer (str | None): The specific KiCad layer name to draw on (e.g., "Eco1.User").
-                If None is provided, the function will automatically select an available layer.
+            svg_stroke_color (str, optional): Hex color for the path highlight. Defaults to "#FF4400".
+            svg_stroke_width (float, optional): Stroke weight for the path highlight. Defaults to 1.0.
 
         Returns:
-            Dict[str, Any]: A dictionary containing:
-                - success (bool): True if the operation succeeded and items were drawn.
-                - project_path (str): The project path reference.
-                - highlighted_nets (list): The specific nets that were successfully matched and drawn.
-                - used_layer (str): The actual layer on which the highlights were drawn.
-                - currently_used_layers (list): Layers currently occupied by highlights in this project.
-                - created_items_len (int): The number of individual board segments created.
-                - error (str, optional): Aggregated error messages if the operation failed.
+            str: JSON payload for the SVG viewer.
         """
+
         try:
-           
-            layer_info = pcb_manager.get_user_layers()
+            if not project_path.endswith('.kicad_pro'):
+                project_path = f"{project_path}.kicad_pro"
 
-            if layer is None:
-                layer = auto_select_layer(project_path, layer_info["available"])
+            if not os.path.exists(project_path):
+                return json.dumps({"error": f"Project not found: {project_path}"})
 
-            mark_result = pcb_manager.mark_path(path_nets, layer)
-
-            if not mark_result["success"]:
-                return {
-                    "success": False,
-                    "error": "; ".join(mark_result["errors"]),
-                    "available_user_layers": layer_info["available"],
-                }
-
-            # cache die übergebenen Ids
-            cache_key = f"{project_path}:highlights"
-
-            if cache_key not in pcb_manager.highlight_cache:
-                pcb_manager.highlight_cache[cache_key] = []
-
-            pcb_manager.highlight_cache[cache_key].append(
-                {
-                    "layer": mark_result["used_layer"],
-                    "nets": path_nets,
-                    "item_ids": mark_result["created_items"],
-                }
+            svg_path = plot_svg_pcb(project_path)
+            if not svg_path or not os.path.exists(svg_path):
+                return json.dumps({"error": "PCB SVG export failed"})
+            
+            svg_result = draw_path_to_pcb_svg(
+            nets=path_nets,
+            svg_path=svg_path,
+            path_id_prefix="pcb_highlight",
+            style={"stroke": svg_stroke_color, "stroke_width": svg_stroke_width}
             )
 
-            # welche layer werden derzeit verwendet
-            used_layers = {h["layer"] for h in pcb_manager.highlight_cache[cache_key]}
+            if not svg_result.get("success"):
+                return json.dumps({"error": f"SVG draw failed: {svg_result.get('errors')}"})
 
-            return {
-                "success": True,
-                "project_path": project_path,
-                "highlighted_nets": mark_result["highlighted_nets"],
-                "used_layer": mark_result["used_layer"],
-                "available_user_layers": layer_info["available"],
-                "currently_used_layers": list(used_layers),
-                "requested_nets": len(path_nets),
-                "created_items_len": len(mark_result["created_items"]),
-                "suggestion": f"Next path can use one of: {[l for l in layer_info['available'] if l not in used_layers]}",
-            }
+            summary = f"Highlighted nets: {', '.join(path_nets)}"
 
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-        
+            start_or_update_file_server(os.path.dirname(os.path.abspath(svg_path)))
+            url = f"http://localhost:{FILE_SERVER_PORT}/{urllib.parse.quote(os.path.basename(svg_path))}"
 
-    @mcp.tool()
-    async def unmark_paths(
-        project_path: str, layers: list[str] | None
-    ) -> Dict[str, Any]:
-        """
-        Remove highlighted paths from the active KiCad PCB layout.
-
-        Uses the internal cache generated by `highlight_path` to find the KiCad object IDs
-        of the previously drawn highlight segments and deletes them. Can target specific 
-        layers or clear all highlights for the given project.
-
-        Args:
-            project_path (str): Path to the KiCad project directory (used to access the cache).
-            layers (list[str] | None): A list of layer names to clear (e.g., ["Eco1.User"]). 
-                If None is provided, highlights across ALL tracked layers are deleted.
-
-        Returns:
-            Dict[str, Any]: A dictionary containing:
-                - success (bool): True if items were successfully removed.
-                - project_path (str): The relevant project path.
-                - deleted_items (int): Total number of board segments deleted.
-                - paths_cleared (int): Number of distinct path groupings removed.
-                - layers_cleared (list): The names of the layers that were cleared.
-                - error/errors (list/str, optional): Error messages or failure reasons.
-        """
-        try:
-
-            cache_key = f"{project_path}:highlights"
-
-            if cache_key not in pcb_manager.highlight_cache:
-                return {
-                    "success": False,
-                    "error": "No cached highlights found",
-                    "info": "if something was not deletet just hit Ctr + Z to revert the last changes or remove the highlights manually",
-                }
-
-            all_item_ids = []
-            layers_cleared = set()
-
-            layers_to_keep = []
-            layers_to_remove = []
-
-            for entry in pcb_manager.highlight_cache[cache_key]:
-                if layers is None or entry["layer"] in layers:
-                    all_item_ids.extend(entry["item_ids"])
-                    layers_cleared.add(entry["layer"])
-                    layers_to_remove.append(entry)
-                else:
-                    layers_to_keep.append(entry)
-
-            if not all_item_ids:
-                del pcb_manager.highlight_cache[cache_key]
-                return {
-                    "success": False,
-                    "error": "No items to delete",
-                    "info": "if something was not deletet just hit Ctr + Z to revert the last changes or remove the highlights manually",
-                }
-
-            unmark_result = pcb_manager.unmark_path(all_item_ids)
-
-            paths_cleared = len(layers_to_remove)
-            if layers_to_keep:
-                pcb_manager.highlight_cache[cache_key] = layers_to_keep
-            else:
-                del pcb_manager.highlight_cache[cache_key]
-
-            return {
-                "success": unmark_result["success"],
-                "project_path": project_path,
-                "deleted_items": unmark_result["deleted_items"],
-                "paths_cleared": paths_cleared,
-                "layers_cleared": list(layers_cleared),
-                "errors": unmark_result.get("errors", []),
-                "layers_remaining": sorted(list({e["layer"] for e in layers_to_keep}))
-                if layers_to_keep
-                else [],
-                "info": "if something was not deletet just hit Ctr + Z to revert the last changes or remove the highlights manually",
-            }
+            return json.dumps({
+                "urls": [url],
+                "names": [os.path.basename(svg_path)],
+                "summary": summary,
+            })
 
         except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    def auto_select_layer(project_path: str, available_layers: list[str]) -> str:
-        """
-        Automatically select the next unused user/eco layer for PCB highlighting.
-
-        Checks the active project's highlight cache to determine which layers are 
-        currently occupied by drawn paths. It iterates through the provided available 
-        layers and returns the first one that is completely empty.
-
-        If all preferred layers are in use or the list is empty, it falls back to 
-        returning the first available layer or a hardcoded default ("Eco1.User").
-
-        Args:
-            project_path (str): Path to the KiCad project (used as the cache key).
-            available_layers (list[str]): A list of all enabled user/eco layers on the board, 
-                ideally ordered by preference (e.g., ["Eco1.User", "Eco2.User", ...]).
-
-        Returns:
-            str: The canonical name of the selected target layer.
-        """
-        cache_key = f"{project_path}:highlights"
-
-        if cache_key in pcb_manager.highlight_cache:
-            used_layers = {h["layer"] for h in pcb_manager.highlight_cache[cache_key]}
-
-            for layer in available_layers:
-                if layer not in used_layers:
-                    return layer
-
-        # erster available layer oder default
-        return available_layers[0] if available_layers else "Eco1.User"
-
+            import traceback
+            return json.dumps({
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+            })
