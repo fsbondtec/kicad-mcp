@@ -59,6 +59,14 @@ def register_svg_viewer_resources(mcp: FastMCP) -> None:
   #svg-wrap img {{ width: 100%; height: auto; display: block; }}
   #loader {{ padding: 20px; color: #888; }}
   #error  {{ color: tomato; padding: 10px; font-weight: bold; }}
+
+  @media (prefers-color-scheme: dark) {{
+    body {{ background: #000000; color: #eeeeee; }}
+    #toolbar {{ background: rgba(20, 20, 20, 0.95); border-bottom: 1px solid #444; }}
+    #toolbar button {{ background: #333333; border: 1px solid #555; color: #eeeeee; }}
+    #container {{ background: #000000; box-shadow: 0 4px 12px rgba(255,255,255,.1); }}
+    #svg-wrap svg, #svg-wrap img {{ filter: invert(1) hue-rotate(180deg); }}
+  }}
 </style>
 </head>
 <body>
