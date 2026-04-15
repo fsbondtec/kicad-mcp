@@ -7,8 +7,7 @@ import sys
 from kicad_mcp.utils.kicad_cli import *
 from kicad_mcp.utils.file_utils import get_project_files 
 
-from kipy import KiCad
-from kipy.util.units import to_mm
+from kiutils.board import Board
 
 
 OVERLAY_START = "<!-- path_overlay_start -->"
@@ -173,24 +172,20 @@ def segments_to_svg_path(segments: List[Dict]) -> str:
         
     return " ".join(d_parts)
 
-def  tracks_to_svg_path(tracks, nets: list) -> str:
-    """
-    Converts the tracks of the pcb file to svg path 
-    """
+def tracks_to_svg_path(segments, net_map: dict, nets: list) -> str:
+    """Converts kiutils track segments to an SVG path string."""
     d_parts = []
-    for track in tracks:
-        net = track.net
-        if not net or net.name not in nets:
+    for seg in segments:
+        net_name = net_map.get(seg.net, "")
+        if net_name not in nets:
             continue
-        
-        sx, sy = to_mm(track.start.x), to_mm(track.start.y)  
-        ex, ey = to_mm(track.end.x), to_mm(track.end.y)
-    
+        if not hasattr(seg, 'start'):  
+            continue
+        sx, sy = seg.start.X, seg.start.Y
+        ex, ey = seg.end.X, seg.end.Y
         if sx == ex and sy == ey:
             continue
-        
         d_parts.append(f"M {sx:.4f} {sy:.4f} L {ex:.4f} {ey:.4f}")
-    
     return " ".join(d_parts)
 
 
@@ -318,21 +313,22 @@ def draw_path_to_svg(
 def draw_path_to_pcb_svg(
     nets: list,
     svg_path: str,
+    pcb_path: str,
     path_id_prefix: str = "mcp_pcb_path",
     style: Optional[Dict] = None,
 ) -> Dict[str, Any]:
     result = {"success": False, "written_files": [], "errors": []}
 
-    kicad = KiCad()
-    board = kicad.get_board()
-    if not board:
-        result["errors"].append("No board open in KiCad")
+    try:
+        board = Board.from_file(pcb_path)
+    except Exception as e:
+        result["errors"].append(f"Could not read PCB file: {e}")
         return result
 
-    tracks = board.get_tracks()
+    net_map = {n.number: n.name for n in board.nets}
     active_style = {**DEFAULT_STYLE, **(style or {})}
 
-    d = tracks_to_svg_path(tracks, nets)
+    d = tracks_to_svg_path(board.traceItems, net_map, nets)
     if not d:
         result["errors"].append("No matching tracks found for given nets")
         return result

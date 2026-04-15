@@ -4,11 +4,15 @@ Netlist extraction, graph creation anf analysis of project
 
 import json
 import os
+import platform
+import subprocess
 import urllib.parse
 from typing import Dict, Any
 from fastmcp import FastMCP
 from fastmcp.server.apps import AppConfig
 import hashlib
+
+from kicad_mcp.config import KICAD_APP_PATH
 
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
@@ -292,7 +296,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
         svg_stroke_width: float = 1.0,
     ) -> str:
         """
-        Find a path between two components, generate SVGs and display them in the viewer.
+        Find a path between two components in the schematic, generate SVGs and display them in the viewer.
 
         Args:
             project_path (str): Path to the KiCad project file (.kicad_pro).
@@ -430,13 +434,17 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
             svg_path = plot_svg_pcb(project_path)
             if not svg_path or not os.path.exists(svg_path):
-                return json.dumps({"error": "PCB SVG export failed"})
+                return json.dumps({
+                    "error": "PCB SVG export failed. KiCad CLI could not export the PCB file."
+                })
             
+            pcb_path = os.path.splitext(project_path)[0] + ".kicad_pcb"
             svg_result = draw_path_to_pcb_svg(
-            nets=path_nets,
-            svg_path=svg_path,
-            path_id_prefix="pcb_highlight",
-            style={"stroke": svg_stroke_color, "stroke_width": svg_stroke_width}
+                nets=path_nets,
+                svg_path=svg_path,
+                pcb_path=pcb_path,
+                path_id_prefix="pcb_highlight",
+                style={"stroke": svg_stroke_color, "stroke_width": svg_stroke_width},
             )
 
             if not svg_result.get("success"):
