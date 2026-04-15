@@ -6,6 +6,10 @@ import os
 import logging
 from typing import Dict, List, Any
 from mcp.server.fastmcp import FastMCP
+import platform
+import subprocess
+
+from kicad_mcp.config import KICAD_APP_PATH
 
 from kicad_mcp.utils.kicad_utils import find_kicad_projects
 from kicad_mcp.utils.file_utils import get_project_files, load_project_json
@@ -51,3 +55,34 @@ def register_project_tools(mcp: FastMCP) -> None:
             "files": files,
             "metadata": metadata,
         }
+
+    @mcp.tool()
+    def open_kicad_project(project_path: str) -> Dict[str, Any]:
+        """
+        Open a KiCad project in the KiCad project manager.
+
+        Args:
+            project_path (str): Path to the KiCad project file (.kicad_pro).
+
+        Returns:
+            Dict with success flag and status message.
+        """
+        if not project_path.endswith(".kicad_pro"):
+            project_path = f"{project_path}.kicad_pro"
+
+        if not os.path.exists(project_path):
+            return {"success": False, "error": f"Project not found: {project_path}"}
+
+        try:
+            system = platform.system()
+
+            if system == "Windows":
+                kicad_exe = os.path.join(KICAD_APP_PATH, "bin", "kicad.exe")
+                if not os.path.exists(kicad_exe):
+                    return {"success": False, "error": f"kicad.exe not found: {kicad_exe}"}
+                subprocess.Popen([kicad_exe, project_path])
+
+            return {"success": True, "message": f"Opening: {os.path.basename(project_path)}"}
+
+        except Exception as e:
+            return {"success": False, "error": f"Failed to open KiCad: {str(e)}"}

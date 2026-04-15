@@ -4,15 +4,11 @@ Netlist extraction, graph creation anf analysis of project
 
 import json
 import os
-import platform
-import subprocess
 import urllib.parse
 from typing import Dict, Any
 from fastmcp import FastMCP
 from fastmcp.server.apps import AppConfig
 import hashlib
-
-from kicad_mcp.config import KICAD_APP_PATH
 
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
