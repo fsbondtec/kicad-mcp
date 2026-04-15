@@ -378,8 +378,14 @@ def register_graph_tools(mcp: FastMCP) -> None:
             if not written:
                 return json.dumps({"error": "SVG files were not written to disk."})
 
-            start_or_update_file_server(os.path.dirname(os.path.abspath(written[0])))
-            urls  = [f"http://localhost:{FILE_SERVER_PORT}/{urllib.parse.quote(os.path.basename(p))}" for p in written]
+            project_root = os.path.dirname(os.path.abspath(project_path))
+            start_or_update_file_server(project_root)
+
+            def make_url(svg_file: str) -> str:
+                rel = os.path.relpath(svg_file, project_root).replace("\\", "/")
+                return f"http://localhost:{FILE_SERVER_PORT}/" + "/".join(urllib.parse.quote(p) for p in rel.split("/"))
+
+            urls  = [make_url(p) for p in written]
             names = [os.path.basename(p) for p in written]
 
             return json.dumps({"urls": urls, "names": names, "summary": summary})
@@ -438,8 +444,10 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
             summary = f"Highlighted nets: {', '.join(path_nets)}"
 
-            start_or_update_file_server(os.path.dirname(os.path.abspath(svg_path)))
-            url = f"http://localhost:{FILE_SERVER_PORT}/{urllib.parse.quote(os.path.basename(svg_path))}"
+            project_root = os.path.dirname(os.path.abspath(project_path))
+            start_or_update_file_server(project_root)
+            rel = os.path.relpath(svg_path, project_root).replace("\\", "/")
+            url = f"http://localhost:{FILE_SERVER_PORT}/" + "/".join(urllib.parse.quote(p) for p in rel.split("/"))
 
             return json.dumps({
                 "urls": [url],
