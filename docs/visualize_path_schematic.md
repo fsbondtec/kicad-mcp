@@ -19,6 +19,6 @@ Can you highlight The Path in schematic from U1 to R2?
 
 This will provide:
 - colored lines in the svg file
-- small thumbnail of the path in your claude response
+- visual and interactive of the svg with the path in your claude response
 - you can choose your own color
 

@@ -72,23 +72,6 @@ In the `.env` file, add your custom project directories:
 KICAD_SEARCH_PATHS=~/pcb,~/Electronics,~/Projects/KiCad
 ```
 
-### Image Rendering with PyVIPS
-
-To display highlighted circuit paths directly in the chat, this server converts KiCad's highly SVG schematics into compressed JPEG images. We use **PyVIPS** for this task. 
-
-**Windows Setup for PyVIPS:**
-If you are running this server on Windows, PyVIPS requires the underlying `libvips` C-binaries to function.
-
-1. Download the latest Windows ZIP archive (`vips-dev-w64-web-...zip`) from the [libvips releases page](https://github.com/libvips/build-win64-mxe/releases).
-2. Extract the folder to a permanent location on your drive (e.g., `C:\vips`).
-3. Add the absolute path to the extracted `bin` folder to your `.env` file so Python can locate the required `.dll` files:
-
-```env
-# Add the path to your libvips bin directory (Windows only)
-LIBVIPS_BIN_PATH=C:\vips\vips-dev-8.15\bin
-```
-
-
 
 ### 3. Configure an MCP Client
 
@@ -127,11 +110,6 @@ Replace `/ABSOLUTE/PATH/TO/YOUR/PROJECT/kicad-mcp` with the actual path to your 
 ### 4. Restart Your MCP Client
 
 Close and reopen your MCP client to load the new configuration.
-
-### 5. KiCad API
-
-To use the Highlight Tools KiCad API needs to be activated in KiCad:
-- open Project -> Settings -> Plugins -> tick activate KiCad API -> OK
 
 ## Understanding MCP Components
 
@@ -177,11 +155,9 @@ The KiCad MCP Server provides several key features, each with detailed documenta
 - **Design Rule Checking**: Run DRC checks using the KiCad CLI and track your progress over time
   - *Example:* "Run DRC on my power supply board and compare to last week" → Shows progress in fixing violations
 
-- **Path Visualisation in PCB File**: Generate visual representations of circuit Paths in PCB
-  - *Example:* "Can you mark this Path in my Project" → Displays a visual representation of the Path on one of the User Layers
 
-_ **schematic path visualisation in svg files**: generate visual representation of paths in schematic svg plotting
-  _ *Example*: "Can you find the high voltage path through my project and highlight it in schematic?" -> plots with kicad cli all schematics in this project as svg, adds path to highlight those connections
+_ **schematic and pcb path visualisation in svg files**: generate visual representation of paths in schematic and pcb svg plotting
+  _ *Example*: "Can you find the high voltage path through my project and highlight it in schematic and pcb?" -> plots with kicad cli all schematics to svg and then all pcb layers in one svg file in this project, adds path to highlight those connections
 
 For more examples and details on each feature, see the dedicated guides in the documentation. You can also ask the LLM what tools it has access to!
 
@@ -210,7 +186,7 @@ Detailed documentation for each feature is available in the `docs/` directory:
 - [Project Management](docs/project_guide.md)
 - [PCB Design Analysis](docs/analysis_guide.md)
 - [Design Rule Checking (DRC)](docs/drc_guide.md)
-- [Highlighting Path in PCB](docs/visualize_path.md)
+- [Highlighting Path in plotted PCB](docs/visualize_path.md)
 - [Highlight Path in plotted schematic file](docs/visualize_path_schematic.md)
 
 ## Configuration
