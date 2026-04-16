@@ -152,8 +152,6 @@ class CircuitGraph:
                         "path_length": new_comp_count,
                         "component_details": component_details,
                         "nets": nets,
-                        "debug_power_symbols": sorted(self.power_symbols),
-                        "debug_project_files": get_project_files(self.project_path),
                     }
 
                 visited.add(neighbor)
