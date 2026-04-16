@@ -151,7 +151,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
         between a start and an end component.
 
         Args:
-            project_path (str): Path to the KiCad project directory.
+            project_path (str): Path to the KiCad project directory (.kicad_pro).
             schematic_path (str): Path to the KiCad schematic file (.kicad_sch).
             start_component (str): The reference designator of the starting component (e.g., "R1").
             end_component (str): The reference designator of the ending component (e.g., "U3").
@@ -338,9 +338,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             )
 
             if not path_result.get("success"):
-                return json.dumps({
-                    "error": f"No path found between {start_component} and {end_component}",
-                })
+                return json.dumps(path_result, ensure_ascii=False)            
 
             wire_segments_formatted = path_result.get("wire_segments_formatted", [])
             wire_only = [
@@ -409,11 +407,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
     ) -> str:
         """
         Highlight a specified list of nets on the PCB layout and display the result as SVG.
-        
-        The User should be advised to:
-        If the zones are filled in the pcb project and because of that some tracks are not visible then you can open the project and with str + B unfill all Zones.
-        The tool needs to be called again, now alle connections should be visible.
-        With 'B' the zones can be filled again.
 
         Args:
             project_path (str): Path to the KiCad project file (.kicad_pro).

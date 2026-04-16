@@ -95,7 +95,7 @@ class CircuitGraph:
                 "detailed_path": [start]
             }
 
-        queue = deque([(start, [start], 0, None)])  # first Node, Path, component_count
+        queue = deque([(start, [start], 1, None)])  # first Node, Path, component_count (start counts as 1)
         visited = {start}
 
         while queue:
@@ -152,6 +152,8 @@ class CircuitGraph:
                         "path_length": new_comp_count,
                         "component_details": component_details,
                         "nets": nets,
+                        "debug_power_symbols": sorted(self.power_symbols),
+                        "debug_project_files": get_project_files(self.project_path),
                     }
 
                 visited.add(neighbor)
@@ -227,6 +229,7 @@ class CircuitGraph:
             Dict[str, Any]: A dictionary containing the execution results 
         """
 
+        component = component.upper()
         if component not in self.adjacency_list:
             return {
                 "success": False,
