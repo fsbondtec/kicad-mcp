@@ -58,12 +58,25 @@ class CircuitGraph:
             List of component references forming the path
         """
 
+        start = start.upper()
+        end = end.upper()
+
         if start not in self.adjacency_list or end not in self.adjacency_list:
             return {
                 "success": False,
                 "path": None,
                 "path_length": 0,
                 "nets": [],
+                "error": "Please enter valid components",
+            }
+        
+        if max_depth == 0:
+            return {
+                "success": False,
+                "path": None,
+                "path_length": 0,
+                "nets": [],
+                "error": "Max depth must be positive",
             }
 
         if start == end:
@@ -536,3 +549,5 @@ class CircuitGraph:
                             power_symbols.add(final_value)
 
         return power_symbols
+
+    

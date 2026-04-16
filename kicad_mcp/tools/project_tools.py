@@ -42,18 +42,12 @@ def register_project_tools(mcp: FastMCP) -> None:
         # Get related files
         files = get_project_files(project_path)
 
-        # Get project metadata
-        metadata = {}
-        project_data = load_project_json(project_path)
-        if project_data and "metadata" in project_data:
-            metadata = project_data["metadata"]
 
         return {
             "name": project_name,
             "path": project_path,
             "directory": project_dir,
             "files": files,
-            "metadata": metadata,
         }
 
     @mcp.tool()

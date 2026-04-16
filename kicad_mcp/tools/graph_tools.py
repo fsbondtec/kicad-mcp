@@ -186,8 +186,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
             if not path_result.get("success"):
                 return {
-                    "success": False,
-                    "error": f"No path found between {start_component} and {end_component}",
+                    **path_result,
                     "start_component": start_component,
                     "end_component": end_component,
                 }
