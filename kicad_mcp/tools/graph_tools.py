@@ -379,10 +379,10 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 return json.dumps({"error": "SVG files were not written to disk."})
 
             project_root = os.path.dirname(os.path.abspath(project_path))
-            start_or_update_file_server(project_root)
+            server_root  = start_or_update_file_server(project_root)
 
             def make_url(svg_file: str) -> str:
-                rel = os.path.relpath(svg_file, project_root).replace("\\", "/")
+                rel = os.path.relpath(svg_file, server_root).replace("\\", "/")
                 return f"http://localhost:{FILE_SERVER_PORT}/" + "/".join(urllib.parse.quote(p) for p in rel.split("/"))
 
             urls  = [make_url(p) for p in written]
@@ -410,6 +410,11 @@ def register_graph_tools(mcp: FastMCP) -> None:
     ) -> str:
         """
         Highlight a specified list of nets on the PCB layout and display the result as SVG.
+        
+        The User should be advised to:
+        If the zones are filled in the pcb project and because of that some tracks are not visible then you can open the project and with str + B unfill all Zones.
+        The tool needs to be called again, now alle connections should be visible.
+        With 'B' the zones can be filled again.
 
         Args:
             project_path (str): Path to the KiCad project file (.kicad_pro).
@@ -449,8 +454,8 @@ def register_graph_tools(mcp: FastMCP) -> None:
             summary = f"Highlighted nets: {', '.join(path_nets)}"
 
             project_root = os.path.dirname(os.path.abspath(project_path))
-            start_or_update_file_server(project_root)
-            rel = os.path.relpath(svg_path, project_root).replace("\\", "/")
+            server_root  = start_or_update_file_server(project_root)
+            rel = os.path.relpath(svg_path, server_root).replace("\\", "/")
             url = f"http://localhost:{FILE_SERVER_PORT}/" + "/".join(urllib.parse.quote(p) for p in rel.split("/"))
 
             return json.dumps({

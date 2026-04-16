@@ -32,15 +32,20 @@ class _CORSRequestHandler(http.server.SimpleHTTPRequestHandler):
         pass  # suppress access logs
 
 
-def start_or_update_file_server(project_dir: str) -> None:
-    """Start the file server rooted at project_dir. Once started, the root never changes."""
+def start_or_update_file_server(project_dir: str) -> str:
+    """Start the file server rooted one level above project_dir.
+
+    Never changes after first start — returns the root being served.
+    """
     global _file_server, _root_directory
 
     with _file_server_lock:
         if _file_server is None:
-            _root_directory = project_dir
+            _root_directory = str(Path(project_dir).parent)
             handler = lambda *args, **kwargs: _CORSRequestHandler(
                 *args, directory=_root_directory, **kwargs
             )
             _file_server = http.server.HTTPServer(("localhost", FILE_SERVER_PORT), handler)
             threading.Thread(target=_file_server.serve_forever, daemon=True).start()
+
+    return _root_directory

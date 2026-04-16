@@ -84,7 +84,6 @@ def plot_svg_pcb(project_path: str):
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
         return output_svg
-        print("export successfull")
     except subprocess.CalledProcessError as e:
         print("error when plotting")
         print(e.stderr if e.stderr else e.stdout)
