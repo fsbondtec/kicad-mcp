@@ -40,6 +40,10 @@ dependencies:
     - kinparse>=1.2.4
     - kiutils>=1.4.8
     - kicad-python>=0.5.0
+    - pymupdf4llm>=1.27.2.3
+    - curl-cffi>=0.15.0
+    - langchain-text-splitters>=1.1.2
+
     
     - py-spy>=0.3.0
     - cairosvg>=2.7.0
