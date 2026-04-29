@@ -43,6 +43,8 @@ dependencies:
     - pymupdf4llm>=1.27.2.3
     - curl-cffi>=0.15.0
     - langchain-text-splitters>=1.1.2
+    - sentence-transformers>=5.4.1
+    - einops>=0.8.2
 
     
     - py-spy>=0.3.0
