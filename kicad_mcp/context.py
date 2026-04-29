@@ -39,7 +39,20 @@ async def kicad_lifespan(
     Yields:
         KiCadAppContext: A typed context object shared across all handlers
     """
+    import threading
+    from kicad_mcp.utils.get_datasheets import run_pipeline
+    from kicad_mcp.utils.rag import initialize_rag
+    from kicad_mcp.utils.chunking_utils import get_final_chunks
+
+    def _run_all():
+        run_pipeline()
+        chunks = get_final_chunks()
+        initialize_rag(chunks)
+
     logging.info(f"Starting KiCad MCP server initialization")
+
+    threading.Thread(target=_run_all, daemon=True, name="datasheet-pipeline").start()
+    logging.info("Datasheet pipeline started in background")
 
     # Resources initialization - Python path setup removed
     logging.info("Setting up KiCad Python modules")

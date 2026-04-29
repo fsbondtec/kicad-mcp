@@ -21,6 +21,7 @@ from kicad_mcp.resources.svg_viewer_resources import register_svg_viewer_resourc
 from kicad_mcp.tools.project_tools import register_project_tools
 from kicad_mcp.tools.drc_tools import register_drc_tools
 from kicad_mcp.tools.graph_tools import register_graph_tools
+from kicad_mcp.tools.rag_tools import register_rag_tools
 
 # Import prompt handlers
 
@@ -146,6 +147,7 @@ def create_server() -> FastMCP:
     register_project_tools(mcp)
     register_drc_tools(mcp)
     register_graph_tools(mcp)
+    register_rag_tools(mcp)
 
     # Register prompts
 
