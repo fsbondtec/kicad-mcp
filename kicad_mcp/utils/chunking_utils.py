@@ -39,6 +39,51 @@ def is_useful_chunk(chunk) -> bool:
         return False
     return True
 
+
+_IMAGE_RE = re.compile(
+    r'!\[([^\]]*)\]\(([^)]+\.(?:png|jpg|jpeg|gif|webp|svg))\)',
+    re.IGNORECASE,
+)
+
+
+def _is_useful_image(image_path: str) -> bool:
+    path = Path(image_path)
+    if not path.exists() or path.stat().st_size < 3000:
+        return False
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(path) as img:
+            w, h = img.size
+            if w < 150 or h < 150:
+                return False
+            ratio = w / h
+            if ratio > 4.0 or ratio < 0.25:
+                return False
+        return True
+    except Exception:
+        return False
+
+
+def _annotate_images(chunk) -> None:
+    """Replace markdown image syntax with [Referenzbild: path] markers.
+
+    Images that are too small, too narrow, or likely decorative are removed.
+    Useful image paths are stored in chunk.metadata["images"].
+    """
+    images: list[str] = []
+
+    def _replace(m: re.Match) -> str:
+        alt, path = m.group(1).strip(), m.group(2)
+        if not _is_useful_image(path):
+            return ""
+        images.append(path)
+        label = f" ({alt})" if alt else ""
+        return f"[Referenzbild{label}: {path}]"
+
+    chunk.page_content = _IMAGE_RE.sub(_replace, chunk.page_content)
+    if images:
+        chunk.metadata["images"] = images
+
 def get_final_chunks() -> list:
     all_chunks = []
 
@@ -56,7 +101,8 @@ def get_final_chunks() -> list:
             chunks = [c for c in chunks if is_useful_chunk(c)]
 
             for chunk in chunks:
-                chunk.metadata["source"] = md_path.stem  # z.B. "PRTR5V0U2X"
+                chunk.metadata["source"] = md_path.stem
+                _annotate_images(chunk)
 
             all_chunks.extend(chunks)
         except Exception as e:
