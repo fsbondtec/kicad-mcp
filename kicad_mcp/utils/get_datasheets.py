@@ -2,6 +2,7 @@ import pymupdf4llm
 from kiutils.schematic import Schematic
 from urllib.parse import urlparse
 from curl_cffi import requests as curl_requests
+import contextlib
 import os
 import re
 from pathlib import Path
@@ -60,7 +61,7 @@ def collect_datasheet_urls() -> list[str]:
                         if val and val != '~':
                             urls.append(val)
         except Exception as e:
-            print(f"  FEHLER beim Lesen von {sch_path}: {e}")
+            print(f"  FEHLER beim Lesen von {sch_path}: {e}", file=sys.stderr)
     
     return list(set(urls))
 
@@ -75,7 +76,7 @@ def download_datasheets(urls: list[str]):
         
         out_path = DATASHEET_DIR / filename
         if out_path.exists():
-            print(f"  Bereits vorhanden: {filename}")
+            print(f"  Bereits vorhanden: {filename}", file=sys.stderr)
             continue
 
         try:
@@ -85,13 +86,13 @@ def download_datasheets(urls: list[str]):
             r.raise_for_status()
 
             if "pdf" not in r.headers.get("Content-Type", "").lower() and not r.content.startswith(b"%PDF"):
-                print(f"  KEIN PDF: {url}")
+                print(f"  KEIN PDF: {url}", file=sys.stderr)
                 continue
 
             out_path.write_bytes(r.content)
-            print(f"  OK: {filename}")
+            print(f"  OK: {filename}", file=sys.stderr)
         except Exception as e:
-            print(f"  FEHLER {url}: {e}")
+            print(f"  FEHLER {url}: {e}", file=sys.stderr)
 
 def convert_pdfs_to_markdown():
     MARKDOWN_DIR.mkdir(exist_ok=True)
@@ -106,13 +107,14 @@ def convert_pdfs_to_markdown():
 
         print(f"  Konvertiere: {pdf_path.name}", file=sys.stderr)
         try:
-            md = pymupdf4llm.to_markdown(
-                str(pdf_path),
-                write_images=True,
-                image_path=str(IMAGE_DIR),
-                header=False,
-                footer=False,
-            )
+            with contextlib.redirect_stdout(sys.stderr):
+                md = pymupdf4llm.to_markdown(
+                    str(pdf_path),
+                    write_images=True,
+                    image_path=str(IMAGE_DIR),
+                    header=False,
+                    footer=False,
+                )
             md_path.write_text(clean_markdown(md), encoding="utf-8")
             print(f"  OK: {md_path.name}", file=sys.stderr)
         except Exception as e:
