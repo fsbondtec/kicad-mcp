@@ -49,6 +49,9 @@ logs/
 # MCP specific
 ~/.kicad_mcp/drc_history/
 
+# RAG cache (FAISS index + SQLite DB)
+rag_cache/
+
 # UV and modern Python tooling
 uv.lock
 .uv-cache/

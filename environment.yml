@@ -35,7 +35,7 @@ dependencies:
   - pip
   - pip:
     - mcp[cli]>=1.0.0
-    - fastmcp>=3.1.1
+    - fastmcp>=3.2.4
     
     - kinparse>=1.2.4
     - kiutils>=1.4.8
@@ -45,6 +45,7 @@ dependencies:
     - langchain-text-splitters>=1.1.2
     - sentence-transformers>=5.4.1
     - einops>=0.8.2
+    - faiss-cpu>=1.7.0
 
     
     - py-spy>=0.3.0

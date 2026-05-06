@@ -4,7 +4,7 @@ served by the local file server started in graph_tools.
 """
 
 from fastmcp import FastMCP
-from fastmcp.server.apps import AppConfig, ResourceCSP
+from fastmcp.apps import AppConfig, ResourceCSP
 
 from kicad_mcp.utils.svg_file_server import IMAGE_VIEW_URI, FILE_SERVER_PORT
 

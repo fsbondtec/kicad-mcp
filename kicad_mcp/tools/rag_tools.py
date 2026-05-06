@@ -1,7 +1,7 @@
 from pathlib import Path
 from fastmcp import FastMCP
 from fastmcp.utilities.types import Image
-from kicad_mcp.utils.rag import search
+from kicad_mcp.utils.search_rag import search
 
 
 def register_rag_tools(mcp: FastMCP) -> None:
@@ -32,7 +32,7 @@ def register_rag_tools(mcp: FastMCP) -> None:
             with that path to visually inspect the diagram.
             Returns an empty list if the RAG index is not yet ready.
         """
-        results = search(query, k=k)
+        results = search(query, top_k=k)
 
         if not results:
             return {
@@ -44,8 +44,13 @@ def register_rag_tools(mcp: FastMCP) -> None:
         return {
             "success": True,
             "results": [
-                {"text": text, "score": round(score, 3)}
-                for text, score in results
+                {
+                    "text": r["text"],
+                    "score": round(r["score"], 3),
+                    "source": r["source"],
+                    "images": r["images"], 
+                }
+                for r in results
             ],
         }
 

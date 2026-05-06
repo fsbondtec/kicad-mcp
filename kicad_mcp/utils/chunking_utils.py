@@ -84,31 +84,24 @@ def _annotate_images(chunk) -> None:
     if images:
         chunk.metadata["images"] = images
 
-def get_final_chunks() -> list:
-    all_chunks = []
+def chunk_file(md_path: Path) -> list:
+    """
+    takes single md file for chunking, splitting and image annotation
+    """
+    try:
+        md_text = md_path.read_text(encoding="utf-8")
+        sections = markdown_splitter.split_text(md_text)
+        chunks = text_splitter.split_documents(sections)
+        
+        #only take useful chunks 
+        chunks = [c for c in chunks if is_useful_chunk(c)]
 
-    md_files = list(MARKDOWN_DIR.glob("*.md"))
-    
-    if not md_files:
+        for chunk in chunks:
+            chunk.metadata["source"] = md_path.stem
+            _annotate_images(chunk)
+
+        return chunks
+        
+    except Exception as e:
+        print(f"  Error chunking {md_path.name}: {e}", file=sys.stderr)
         return []
-
-    print("start chunking",  file=sys.stderr)
-    for md_path in md_files:
-        try:
-            md_text = md_path.read_text(encoding="utf-8")
-            sections = markdown_splitter.split_text(md_text)
-            chunks = text_splitter.split_documents(sections)
-            chunks = [c for c in chunks if is_useful_chunk(c)]
-
-            for chunk in chunks:
-                chunk.metadata["source"] = md_path.stem
-                _annotate_images(chunk)
-
-            all_chunks.extend(chunks)
-        except Exception as e:
-            print(f"  FEHLER beim Chunken von {md_path.name}: {e}", file=sys.stderr)
-    
-    print("finish chunking",  file=sys.stderr)
-
-
-    return all_chunks

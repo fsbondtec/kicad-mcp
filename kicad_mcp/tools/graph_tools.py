@@ -7,7 +7,7 @@ import os
 import urllib.parse
 from typing import Dict, Any
 from fastmcp import FastMCP
-from fastmcp.server.apps import AppConfig
+from fastmcp.apps import AppConfig
 import hashlib
 
 from kicad_mcp.utils.net_parser import NetlistParser
