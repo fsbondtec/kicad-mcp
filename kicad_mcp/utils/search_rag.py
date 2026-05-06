@@ -13,27 +13,31 @@ _model: SentenceTransformer | None = None
 _index = None
 
 def _load():
+    """Load the embedding model and FAISS index on first call; no-op on subsequent calls."""
     global _model, _index
     if _model is not None:
-        return 
-    
+        return
+
     if not FAISS_FILE.exists() or not DB_FILE.exists():
-        raise FileNotFoundError("Rag File not found. Run update_db.py.")
-    
+        raise FileNotFoundError("RAG index not found. Run update_db.py first.")
+
     _model = SentenceTransformer("nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True)
     _index = faiss.read_index(str(FAISS_FILE))
 
 
 def search(query: str, top_k: int = 4) -> list[tuple[str, float]]:
+    """Return the top_k most relevant datasheet chunks for the given query, with scores."""
     _load()
-    
+
     q_emb = _model.encode(
         [f"search_query: {query}"],
         show_progress_bar=False
     ).astype("float32")
+    # L2-normalize so IndexFlatIP computes cosine similarity instead of raw dot product
     faiss.normalize_L2(q_emb)
-    
+
     scores, ids = _index.search(q_emb, top_k)
+    # FAISS returns -1 for slots where fewer than top_k results exist
     found_ids = [i for i in ids[0].tolist() if i != -1]
     if not found_ids:
         return []

@@ -155,9 +155,11 @@ The KiCad MCP Server provides several key features, each with detailed documenta
 - **Design Rule Checking**: Run DRC checks using the KiCad CLI and track your progress over time
   - *Example:* "Run DRC on my power supply board and compare to last week" → Shows progress in fixing violations
 
+- **Datasheet RAG Search**: Automatically indexes component datasheets and lets Claude answer technical questions about your components
+  - *Example:* "What is the I2C address of U3?" → Searches the indexed datasheet and returns the relevant section
 
-_ **schematic and pcb path visualisation in svg files**: generate visual representation of paths in schematic and pcb svg plotting
-  _ *Example*: "Can you find the high voltage path through my project and highlight it in schematic and pcb?" -> plots with kicad cli all schematics to svg and then all pcb layers in one svg file in this project, adds path to highlight those connections
+- **Schematic and PCB path visualisation in SVG files**: Generate visual representation of paths in schematic and PCB SVG plotting
+  - *Example*: "Can you find the high voltage path through my project and highlight it in schematic and pcb?" → Plots with kicad-cli all schematics to SVG and then all PCB layers in one SVG file, highlights the connections
 
 For more examples and details on each feature, see the dedicated guides in the documentation. You can also ask the LLM what tools it has access to!
 
@@ -188,6 +190,7 @@ Detailed documentation for each feature is available in the `docs/` directory:
 - [Design Rule Checking (DRC)](docs/drc_guide.md)
 - [Highlighting Path in plotted PCB](docs/visualize_path.md)
 - [Highlight Path in plotted schematic file](docs/visualize_path_schematic.md)
+- [Datasheet RAG Search](docs/rag_guide.md)
 
 ## Configuration
 

@@ -30,6 +30,7 @@ text_splitter = RecursiveCharacterTextSplitter(
 
 
 def is_useful_chunk(chunk) -> bool:
+    """Return True if the chunk contains enough meaningful content to be indexed."""
     content = chunk.page_content.strip()
     text_only = re.sub(r'<br>', '', content).strip()
     if len(text_only) < 50:
@@ -47,7 +48,9 @@ _IMAGE_RE = re.compile(
 
 
 def _is_useful_image(image_path: str) -> bool:
+    """Return True if the image file exists, is large enough, and has reasonable dimensions."""
     path = Path(image_path)
+    # 3 KB minimum filters out single-pixel spacers and tiny icons pymupdf4llm extracts
     if not path.exists() or path.stat().st_size < 3000:
         return False
     try:
@@ -56,6 +59,7 @@ def _is_useful_image(image_path: str) -> bool:
             w, h = img.size
             if w < 150 or h < 150:
                 return False
+            # ratio check drops banners (very wide) and vertical dividers (very tall)
             ratio = w / h
             if ratio > 4.0 or ratio < 0.25:
                 return False
@@ -85,9 +89,7 @@ def _annotate_images(chunk) -> None:
         chunk.metadata["images"] = images
 
 def chunk_file(md_path: Path) -> list:
-    """
-    takes single md file for chunking, splitting and image annotation
-    """
+    """Split a single markdown file into filtered, image-annotated chunks ready for indexing."""
     try:
         md_text = md_path.read_text(encoding="utf-8")
         sections = markdown_splitter.split_text(md_text)
