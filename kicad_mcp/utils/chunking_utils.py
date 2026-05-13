@@ -3,10 +3,7 @@ from pathlib import Path
 import re
 import sys
 
-from kicad_mcp.config import KICAD_USER_DIR
-
-_KICAD_BASE   = Path(KICAD_USER_DIR)
-MARKDOWN_DIR  = _KICAD_BASE / "markdown"
+MARKDOWN_DIR  = Path(__file__).parent.parent.parent / "data" / "markdown"
 
 headers_to_split_on = [
     ("#", "Header 1"),

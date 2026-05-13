@@ -10,9 +10,7 @@ from sentence_transformers import SentenceTransformer
 from kicad_mcp.utils.chunking_utils import chunk_file
 from kicad_mcp.utils.get_datasheets import run_pipeline
 
-_KICAD_BASE = Path("C:/Users/messeel/KiCad/9.0/projects")
-
-MARKDOWN_DIR  = _KICAD_BASE / "markdown"
+MARKDOWN_DIR  = Path(__file__).parent.parent / "data" / "markdown"
 CACHE_DIR     = Path(__file__).parent.parent / "rag_cache"
 DB_FILE       = CACHE_DIR / "kicad_data.db"
 FAISS_FILE    = CACHE_DIR / "kicad_index.faiss"
@@ -105,7 +103,6 @@ def sync_database():
         else:
             print(f"new datasheet: {source_name}...", file=sys.stderr)
 
-        #if no hash was stored at all create chunks for new md
         chunks = chunk_file(md_path)
         if not chunks:
             continue

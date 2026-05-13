@@ -52,6 +52,9 @@ logs/
 # RAG cache (FAISS index + SQLite DB)
 rag_cache/
 
+# Downloaded datasheets, converted markdown and extracted images
+data/
+
 # UV and modern Python tooling
 uv.lock
 .uv-cache/

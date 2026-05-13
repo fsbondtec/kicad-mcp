@@ -10,11 +10,9 @@ import sys
 from kicad_mcp.utils.kicad_utils import find_kicad_projects;
 from kicad_mcp.utils.file_utils import get_project_files;
 
-from kicad_mcp.config import KICAD_USER_DIR
-
-_KICAD_BASE   = Path(KICAD_USER_DIR)
-DATASHEET_DIR = _KICAD_BASE / "datasheets"
-MARKDOWN_DIR  = _KICAD_BASE / "markdown"
+_DATA_DIR     = Path(__file__).parent.parent.parent / "data"
+DATASHEET_DIR = _DATA_DIR / "datasheets"
+MARKDOWN_DIR  = _DATA_DIR / "markdown"
 IMAGE_DIR     = MARKDOWN_DIR / "img"
 
 def clean_markdown(md: str) -> str:
