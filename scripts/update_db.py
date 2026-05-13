@@ -18,9 +18,11 @@ DB_FILE       = CACHE_DIR / "kicad_data.db"
 FAISS_FILE    = CACHE_DIR / "kicad_index.faiss"
 
 def get_file_hash(path: Path) -> str:
+    """Return the MD5 hash of a file, used to detect content changes between runs."""
     return hashlib.md5(path.read_bytes()).hexdigest()
 
 def init_system():
+    """Create the cache directory, SQLite schema, and an empty FAISS index if they don't exist yet."""
     CACHE_DIR.mkdir(exist_ok=True)
     
     conn = sqlite3.connect(DB_FILE)
@@ -43,6 +45,11 @@ def init_system():
         faiss.write_index(index, str(FAISS_FILE))
 
 def sync_database():
+    """Run the full datasheet pipeline and sync the FAISS index and SQLite DB.
+
+    Only re-embeds markdown files whose content hash has changed since the last run.
+    Removes index entries for markdown files that no longer exist.
+    """
     print("=== Pipeline: PDF → Markdown ===", file=sys.stderr)
     run_pipeline() 
 
