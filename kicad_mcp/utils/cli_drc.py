@@ -7,7 +7,6 @@ import json
 import subprocess
 import tempfile
 from typing import Dict, Any, Optional
-from mcp.server.fastmcp import Context
 
 from kicad_mcp.config import system
 

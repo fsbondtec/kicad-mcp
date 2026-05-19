@@ -31,7 +31,7 @@ def search(query: str, top_k: int = 4) -> list[tuple[str, float]]:
     """Return the top_k most relevant datasheet chunks for the given query, with scores."""
     _load()
 
-    import faiss  # cached after _load(); repeated import is an O(1) dict lookup
+    import faiss  
 
     q_emb = _model.encode(
         [f"search_query: {query}"],
