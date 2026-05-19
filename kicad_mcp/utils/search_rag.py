@@ -1,15 +1,12 @@
 import json
 import sqlite3
-import faiss
-import numpy as np
 from pathlib import Path
-from sentence_transformers import SentenceTransformer
 
 CACHE_DIR  = Path(__file__).parent.parent.parent / "rag_cache"
 DB_FILE    = CACHE_DIR / "kicad_data.db"
 FAISS_FILE = CACHE_DIR / "kicad_index.faiss"
 
-_model: SentenceTransformer | None = None
+_model = None
 _index = None
 
 def _load():
@@ -21,6 +18,11 @@ def _load():
     if not FAISS_FILE.exists() or not DB_FILE.exists():
         raise FileNotFoundError("RAG index not found. Run update_db.py first.")
 
+    # lazy imports — faiss and sentence_transformers are heavy (PyTorch etc.)
+    # importing them at module level would slow down MCP server startup enough to cause a timeout
+    import faiss
+    from sentence_transformers import SentenceTransformer
+
     _model = SentenceTransformer("nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True)
     _index = faiss.read_index(str(FAISS_FILE))
 
@@ -28,6 +30,8 @@ def _load():
 def search(query: str, top_k: int = 4) -> list[tuple[str, float]]:
     """Return the top_k most relevant datasheet chunks for the given query, with scores."""
     _load()
+
+    import faiss  # cached after _load(); repeated import is an O(1) dict lookup
 
     q_emb = _model.encode(
         [f"search_query: {query}"],

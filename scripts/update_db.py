@@ -21,7 +21,7 @@ def get_file_hash(path: Path) -> str:
 
 def init_system():
     """Create the cache directory, SQLite schema, and an empty FAISS index if they don't exist yet."""
-    CACHE_DIR.mkdir(exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
     
     conn = sqlite3.connect(DB_FILE)
     conn.execute("""

@@ -68,7 +68,7 @@ def collect_datasheet_urls() -> list[str]:
 
 def download_datasheets(urls: list[str]):
     """Download PDFs from the given URLs into DATASHEET_DIR, skipping already-present files."""
-    DATASHEET_DIR.mkdir(exist_ok=True)
+    DATASHEET_DIR.mkdir(parents=True, exist_ok=True)
     session = curl_requests.Session()
 
     for url in urls:
@@ -98,8 +98,8 @@ def download_datasheets(urls: list[str]):
 
 def convert_pdfs_to_markdown():
     """Convert all PDFs in DATASHEET_DIR to markdown, extracting images to IMAGE_DIR."""
-    MARKDOWN_DIR.mkdir(exist_ok=True)
-    IMAGE_DIR.mkdir(exist_ok=True)
+    MARKDOWN_DIR.mkdir(parents=True, exist_ok=True)
+    IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 
     for pdf_path in DATASHEET_DIR.glob("*.pdf"):
         md_path = MARKDOWN_DIR / (pdf_path.stem + ".md")
