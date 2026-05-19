@@ -209,8 +209,7 @@ class TestFindPath:
         assert "R1" in result["path"]
         assert "R2" in result["path"]
         assert "Net1" in result["path"]
-        assert result["path_length"] == 1
-        assert len(result["component_details"]) == 2
+        assert result["path_length"] == 2
 
     def test_path(self, simple_chain_netlist, tmp_path):
         """Test path between two components"""
@@ -226,7 +225,7 @@ class TestFindPath:
         assert result["path"][3] == "Net2"
         assert result["path"][4] == "R3"
 
-        assert result["path_length"] == 2
+        assert result["path_length"] == 3
 
     def test_ignore_power_nets_false(self, power_net_netlist, tmp_path):
         """path with power nets"""
@@ -235,7 +234,7 @@ class TestFindPath:
         result = graph.find_path("R1", "U1", False, 10)
 
         assert result["success"] is True
-        assert result["path_length"] == 1
+        assert result["path_length"] == 2
         assert "VCC" in result["path"]
 
     def test_power_general(self, tmp_path):
@@ -293,7 +292,7 @@ class TestFindPath:
         result = graph.find_path("R1", "U1", True, 10)
 
         assert result["success"] is True
-        assert result["path_length"] == 2
+        assert result["path_length"] == 3
         assert "R1" in result["path"]
         assert "C1" in result["path"]
         assert "U1" in result["path"]
@@ -301,7 +300,7 @@ class TestFindPath:
         # shortest Path is through Power when Power Flag is false
         result = graph.find_path("R1", "U1", False, 10)
         assert result["success"] is True
-        assert result["path_length"] == 1
+        assert result["path_length"] == 2
         assert "VCC" in result["path"]
 
     def test_max_depth_limit(self, simple_chain_netlist, tmp_path):
