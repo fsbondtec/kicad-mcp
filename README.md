@@ -54,23 +54,8 @@ kicad-mcp
 
 ### 2. Configure Your Environment
 
-Create a `.env` file to customize where the server looks for your KiCad projects or change the path directly in `config.py`
+Change the path directly in `config.py`
 where the global variables `KICAD_USER_DIR` and `KICAD_APP_PATH` should be changed
-
-```bash
-# Copy the example environment file
-cp .env.example .env
-
-# Edit the .env file
-vim .env
-```
-
-In the `.env` file, add your custom project directories:
-
-```
-# Add paths to your KiCad projects (comma-separated)
-KICAD_SEARCH_PATHS=~/pcb,~/Electronics,~/Projects/KiCad
-```
 
 
 ### 3. Configure an MCP Client
@@ -216,7 +201,6 @@ kicad-mcp/
 ├── README.md                       # Project documentation
 ├── main.py                         # Entry point that runs the server
 ├── requirements.txt                # Python dependencies
-├── .env.example                    # Example environment configuration
 ├── kicad_mcp/                      # Main package directory
 │   ├── __init__.py
 │   ├── server.py                   # MCP server setup

@@ -7,8 +7,7 @@ This guide explains how to configure the KiCad MCP Server to suit your environme
 The KiCad MCP Server can be configured in multiple ways:
 
 1. **Environment Variables**: Set directly when running the server
-2. **.env File**: Create a `.env` file in the project root (recommended)
-3. **Code Modifications**: Edit configuration constants in `kicad_mcp/config.py`
+2. **Code Modifications**: Edit configuration constants in `kicad_mcp/config.py`
 
 ## Core Configuration Options
 
@@ -29,38 +28,7 @@ These settings control how the server locates KiCad:
 |---------------------|-------------|---------------|---------|
 | `KICAD_APP_PATH` | Path to the KiCad application | `/Applications/KiCad/KiCad.app` (macOS)<br>`C:\Program Files\KiCad` (Windows)<br>`/usr/share/kicad` (Linux) | `/Applications/KiCad7/KiCad.app` |
 
-## Using a .env File (Recommended)
 
-The recommended way to configure the server is by creating a `.env` file in the project root:
-
-1. Copy the example file:
-   ```bash
-   cp .env.example .env
-   ```
-
-2. Edit the `.env` file:
-   ```bash
-   vim .env
-   ```
-
-3. Add your configuration:
-   ```
-   # KiCad MCP Server Configuration
-   
-   # KiCad User Directory (where KiCad stores project files)
-   KICAD_USER_DIR=~/Documents/KiCad
-   
-   # Additional directories to search for KiCad projects (comma-separated)
-   KICAD_SEARCH_PATHS=~/pcb,~/Electronics,~/Projects/KiCad
-   
-   # KiCad application path (needed for opening projects and command-line tools)
-   # macOS:
-   KICAD_APP_PATH=/Applications/KiCad/KiCad.app
-   # Windows:
-   # KICAD_APP_PATH=C:\Program Files\KiCad
-   # Linux:
-   # KICAD_APP_PATH=/usr/share/kicad
-   ```
 
 ## Directory Structure and Project Discovery
 
