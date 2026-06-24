@@ -70,18 +70,20 @@ def sync_database():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
-    #also delete entrys that do not have a src in md anymore
+    # remove DB + FAISS entries for markdown files that no longer exist
     existing_stems = {p.stem for p in md_files}
     cursor.execute("SELECT DISTINCT source FROM chunks")
     db_sources = {row[0] for row in cursor.fetchall()}
 
     for removed in db_sources - existing_stems:
-        print(f"removed (MD deleted): {removed}...")
+        print(f"removed (MD deleted): {removed}...", file=sys.stderr)
         cursor.execute("SELECT id FROM chunks WHERE source = ?", (removed,))
         ids_to_delete = [r[0] for r in cursor.fetchall()]
         if ids_to_delete:
             index.remove_ids(np.array(ids_to_delete, dtype=np.int64))
         cursor.execute("DELETE FROM chunks WHERE source = ?", (removed,))
+        conn.commit()
+        faiss.write_index(index, str(FAISS_FILE))
 
     updated_count = 0
 
@@ -89,23 +91,23 @@ def sync_database():
         source_name = md_path.stem
         current_hash = get_file_hash(md_path)
 
-        # check hash in file
         cursor.execute("SELECT file_hash FROM chunks WHERE source = ? LIMIT 1", (source_name,))
         row = cursor.fetchone()
         stored_hash = row[0] if row else None
 
         if stored_hash == current_hash:
-            continue  #md did not change, hashes are the same
+            continue  # unchanged
 
-        #else delete old files from faiss and sqlLite 
+        # delete stale entries before re-embedding
         if stored_hash:
             print(f"update {source_name}...", file=sys.stderr)
             cursor.execute("SELECT id FROM chunks WHERE source = ?", (source_name,))
-            ids_to_delete = [r[0] for r in cursor.fetchall()] #all chunk ids that are part of the file that need to be deleted
-            
+            ids_to_delete = [r[0] for r in cursor.fetchall()]
             if ids_to_delete:
                 index.remove_ids(np.array(ids_to_delete, dtype=np.int64))
-                cursor.execute("DELETE FROM chunks WHERE source = ?", (source_name,))
+            cursor.execute("DELETE FROM chunks WHERE source = ?", (source_name,))
+            conn.commit()
+            faiss.write_index(index, str(FAISS_FILE))
         else:
             print(f"new datasheet: {source_name}...", file=sys.stderr)
 
@@ -115,40 +117,34 @@ def sync_database():
 
         texts_to_embed = []
         db_ids = []
-
         pdf_url = url_mapping.get(source_name, "")
 
         for c in chunks:
             c.metadata["url"] = pdf_url
-            
             cursor.execute("""
-                INSERT INTO chunks (source, file_hash, content, metadata) 
+                INSERT INTO chunks (source, file_hash, content, metadata)
                 VALUES (?, ?, ?, ?)
             """, (source_name, current_hash, c.page_content, json.dumps(c.metadata)))
-            
-            chunk_id = cursor.lastrowid
-            db_ids.append(chunk_id)
-
+            db_ids.append(cursor.lastrowid)
             header = (
-                c.metadata.get('Header 2') or
-                c.metadata.get('Header 1') or
-                c.metadata.get('header') or
-                ''
+                c.metadata.get("Header 2") or
+                c.metadata.get("Header 1") or
+                c.metadata.get("header") or
+                ""
             )
             texts_to_embed.append(f"search_document: Section: {header} | {c.page_content}")
 
-        #embedding and safe in faiss
         embeddings = model.encode(texts_to_embed, show_progress_bar=True).astype("float32")
         faiss.normalize_L2(embeddings)
-        
         index.add_with_ids(embeddings, np.array(db_ids, dtype=np.int64))
+
+        # commit DB and FAISS every file 
+        conn.commit()
+        faiss.write_index(index, str(FAISS_FILE))
         updated_count += 1
 
-    conn.commit()
     conn.close()
-    faiss.write_index(index, str(FAISS_FILE))
-    
-    print(f"sync completed {updated_count} file updated", file=sys.stderr)
+    print(f"sync completed: {updated_count} file(s) updated", file=sys.stderr)
 
 if __name__ == "__main__":
     sync_database()
