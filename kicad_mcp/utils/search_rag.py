@@ -6,9 +6,12 @@ from sentence_transformers import SentenceTransformer
 
 
 
-CACHE_DIR  = Path(__file__).parent.parent.parent / "rag_cache"
-DB_FILE    = CACHE_DIR / "kicad_data.db"
-FAISS_FILE = CACHE_DIR / "kicad_index.faiss"
+CACHE_DIR     = Path(__file__).parent.parent.parent / "rag_cache"
+DB_FILE       = CACHE_DIR / "kicad_data.db"
+FAISS_FILE    = CACHE_DIR / "kicad_index.faiss"
+_DATA_DIR     = Path(__file__).parent.parent.parent / "data"
+_PDF_DIR      = _DATA_DIR / "datasheets"
+_MARKDOWN_DIR = _DATA_DIR / "markdown"
 
 _model: SentenceTransformer | None = None
 _index = None
@@ -56,13 +59,22 @@ def search(query: str, top_k: int = 4) -> list[tuple[str, float]]:
     }
 
 
-    return [
-        {
-            "text": db_rows[chunk_id]["content"],
-            "score": float(score),
-            "source": db_rows[chunk_id]["metadata"].get("source", ""),
-            "images": db_rows[chunk_id]["metadata"].get("images", []),
-        }
-        for score, chunk_id in zip(scores[0], found_ids)
-        if chunk_id in db_rows
-    ]
+    results = []
+    for score, chunk_id in zip(scores[0], found_ids):
+        if chunk_id not in db_rows:
+            continue
+        meta   = db_rows[chunk_id]["metadata"]
+        source = meta.get("source", "")
+
+        web_url = meta.get("url", "")
+        path = web_url if web_url else ""
+    
+        results.append({
+            "text":    db_rows[chunk_id]["content"],
+            "score":   float(score),
+            "source":  source,
+            "path":    path,
+            "section": meta.get("Header 2") or meta.get("Header 1") or "",
+            "images":  meta.get("images", []),
+        })
+    return results

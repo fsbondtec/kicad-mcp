@@ -1,3 +1,5 @@
+import json
+
 import pymupdf4llm
 from kiutils.schematic import Schematic
 from urllib.parse import urlparse
@@ -71,11 +73,22 @@ def download_datasheets(urls: list[str]):
     DATASHEET_DIR.mkdir(parents=True, exist_ok=True)
     session = curl_requests.Session()
 
+    #safe original datasheet urls
+    mapping_file = DATASHEET_DIR / "url_mapping.json"
+    url_mapping = {}
+    if mapping_file.exists():
+        with open(mapping_file, "r", encoding="utf-8") as f:
+            url_mapping = json.load(f)
+    
+
     for url in urls:
         filename = url.split("/")[-1].split("?")[0]
         if not filename.endswith(".pdf"):
             filename += ".pdf"
-        
+
+        stem = Path(filename).stem
+        url_mapping[stem] = url
+
         out_path = DATASHEET_DIR / filename
         if out_path.exists():
             print(f"  Bereits vorhanden: {filename}", file=sys.stderr)
@@ -95,6 +108,9 @@ def download_datasheets(urls: list[str]):
             print(f"  OK: {filename}", file=sys.stderr)
         except Exception as e:
             print(f"  FEHLER {url}: {e}", file=sys.stderr)
+
+    with open(mapping_file, "w", encoding="utf-8") as f:
+        json.dump(url_mapping, f, indent=4)
 
 def convert_pdfs_to_markdown():
     """Convert all PDFs in DATASHEET_DIR to markdown, extracting images to IMAGE_DIR."""

@@ -21,6 +21,8 @@ def register_rag_tools(mcp: FastMCP) -> None:
         - Package dimensions or footprint details
         - anything slightly connected to a technical component
 
+        Always list the pdf paths, where the information is from
+
         Args:
             query: Natural language description of what you are looking for.
                    Examples: "I2C address configuration", "output voltage range", "PWM frequency"
@@ -30,6 +32,7 @@ def register_rag_tools(mcp: FastMCP) -> None:
             A list of relevant datasheet excerpts with relevance scores.
             If a result contains a [Referenzbild: path] marker, call read_local_image
             with that path to visually inspect the diagram.
+            Return die path to the pdf file where the information is from
             Returns an empty list if the RAG index is not yet ready.
         """
         results = search(query, top_k=k)
@@ -41,14 +44,19 @@ def register_rag_tools(mcp: FastMCP) -> None:
                 "results": [],
             }
 
+        datasheets_referenced = sorted({r["source"] for r in results if r["source"]})
+
         return {
             "success": True,
+            "datasheets_referenced": datasheets_referenced,
             "results": [
                 {
                     "text": r["text"],
                     "score": round(r["score"], 3),
                     "source": r["source"],
-                    "images": r["images"], 
+                    "path": r["path"],
+                    "section": r["section"],
+                    "images": r["images"],
                 }
                 for r in results
             ],

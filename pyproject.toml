@@ -55,16 +55,10 @@ dependencies = [
     "langchain-text-splitters>=1.1.2",
     "sentence-transformers>=5.4.1",
     "einops>=0.8.2",
-    "faiss-cpu>=1.7.0"
-
-
-
+    "faiss-cpu>=1.7.0",
+    "Pillow>=10.0.0"
 ]
 
-[project.urls]
-"Homepage" = "https://github.com/lamaalrajih/kicad-mcp"
-"Bug Tracker" = "https://github.com/lamaalrajih/kicad-mcp/issues"
-"Documentation" = "https://github.com/lamaalrajih/kicad-mcp#readme"
 
 [project.scripts]
 kicad-mcp = "kicad_mcp.server:main"
@@ -139,6 +133,11 @@ unfixable = [
 [tool.ruff.lint.isort]
 known-first-party = ["kicad_mcp"]
 force-sort-within-sections = true
+
+[tool.mcpb]
+name = "kicad-mcp"
+description = "MCP server for KiCad EDA files"
+entry_point = "kicad_mcp.server:main"
 
 [tool.ruff.format]
 quote-style = "double"

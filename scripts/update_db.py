@@ -53,6 +53,12 @@ def sync_database():
 
     print("start faiss + sql Lite", file=sys.stderr)
     init_system()
+
+    mapping_file = Path(__file__).parent.parent / "data" / "datasheets" / "url_mapping.json"
+    url_mapping = {}
+    if mapping_file.exists():
+        with open(mapping_file, "r", encoding="utf-8") as f:
+            url_mapping = json.load(f)
     
     md_files = list(MARKDOWN_DIR.glob("*.md"))
     if not md_files:
@@ -110,7 +116,11 @@ def sync_database():
         texts_to_embed = []
         db_ids = []
 
+        pdf_url = url_mapping.get(source_name, "")
+
         for c in chunks:
+            c.metadata["url"] = pdf_url
+            
             cursor.execute("""
                 INSERT INTO chunks (source, file_hash, content, metadata) 
                 VALUES (?, ?, ?, ?)
