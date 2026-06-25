@@ -1,5 +1,7 @@
 # KiCad MCP Server
 
+[![MCPAmpel](https://img.shields.io/endpoint?url=https://mcpampel.com/badge/fsbondtec/kicad-mcp.json)](https://mcpampel.com/repo/fsbondtec/kicad-mcp)
+
 This guide will help you set up a Model Context Protocol (MCP) server for KiCad. While the examples in this guide often reference Claude Desktop, the server is compatible with **any MCP-compliant client**. You can use it with Claude Desktop, your own custom MCP clients, or any other application that implements the Model Context Protocol.
 
 ## Table of Contents
