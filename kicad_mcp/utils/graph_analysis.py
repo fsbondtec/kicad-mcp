@@ -97,12 +97,14 @@ class CircuitGraph:
 
         queue = deque([(start, [start], 1, None)])  # first Node, Path, component_count (start counts as 1)
         visited = {start}
+        depth_limited = False
 
         while queue:
             current, path, comp_count, previous_comp = queue.popleft()
 
             # if path is longer then max_depth then skip path
             if comp_count >= max_depth:
+                depth_limited = True
                 continue
 
             for neighbor in self.adjacency_list[current]:
@@ -157,10 +159,26 @@ class CircuitGraph:
                 visited.add(neighbor)
                 queue.append((neighbor, new_path, new_comp_count, new_prev_comp))
 
+        error = f"No path found between '{start}' and '{end}'."
+
+        if depth_limited:
+            error += f" It may exceed max_depth={max_depth} - try increasing it."
+
+        if ignore_power:
+        
+            unfiltered_result = self.find_path(start, end, ignore_power=False, max_depth=max_depth)
+            if unfiltered_result.get("success"):
+                error += (
+                    " Note: a connection exists via power/ground nets only, which were "
+                    "excluded (ignore_power=True)."
+                )
+
         return {
             "success": False,
             "path": None,
             "path_length": 0,
+            "nets": [],
+            "error": error,
         }  # no path
 
     def _build_detailed_path(self, path: List[str]) -> List[str]:

@@ -7,6 +7,8 @@ import os
 from typing import Any
 
 from kicad_mcp.utils.kicad_utils import get_project_name_from_path
+from kiutils.schematic import Schematic
+
 
 
 def get_project_files(project_path: str) -> dict[str, str]:
@@ -64,6 +66,44 @@ def get_project_files(project_path: str) -> dict[str, str]:
         pass
 
     return files
+
+
+def find_component_sheets(project_path: str, ref: str, exclude_path: str | None = None) -> list[str]:
+    """Search every schematic sheet in the project for a component reference.
+
+    Used to build a better error message when a component isn't found in the
+    schematic the caller passed in, it may simply live on a different sheet.
+
+    Args:
+        project_path: Path to the .kicad_pro file
+        ref: Component reference designator to search for (e.g. "U12")
+        exclude_path: Schematic path to skip, typically the one already searched
+
+    Returns:
+        List of schematic file paths that contain a symbol with this reference
+    """
+
+    files = get_project_files(project_path)
+    schematic_paths = files.get("schematic", [])
+    if isinstance(schematic_paths, str):
+        schematic_paths = [schematic_paths]
+
+    exclude_abs = os.path.abspath(exclude_path) if exclude_path else None
+    found_in = []
+
+    for sch_path in schematic_paths:
+        if exclude_abs and os.path.abspath(sch_path) == exclude_abs:
+            continue
+        try:
+            sch = Schematic.from_file(sch_path)
+        except Exception:
+            continue
+        for inst in sch.schematicSymbols:
+            if any(p.key == "Reference" and p.value == ref for p in inst.properties):
+                found_in.append(sch_path)
+                break
+
+    return found_in
 
 
 def load_project_json(project_path: str) -> dict[str, Any] | None:

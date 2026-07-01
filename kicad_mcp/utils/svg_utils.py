@@ -1,6 +1,7 @@
+import difflib
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from xml.etree import ElementTree as ET
 import sys
 
@@ -171,21 +172,30 @@ def segments_to_svg_path(segments: List[Dict]) -> str:
         
     return " ".join(d_parts)
 
-def tracks_to_svg_path(segments, net_map: dict, nets: list) -> str:
-    """Converts kiutils track segments to an SVG path string."""
+def tracks_to_svg_path(segments, net_map: dict, nets: list) -> Tuple[str, set]:
+    """Converts kiutils track segments to an SVG path string.
+
+    Returns:
+        Tuple of (svg path data, set of net names that actually contributed a segment).
+        A net can be present in `nets` but absent from the returned set if it exists
+        on the board but has no routed tracks/vias (e.g. pad-to-pad only).
+    """
     d_parts = []
+    matched_nets = set()
+    nets_set = set(nets)
     for seg in segments:
         net_name = net_map.get(seg.net, "")
-        if net_name not in nets:
+        if net_name not in nets_set:
             continue
-        if not hasattr(seg, 'start'):  
+        if not hasattr(seg, 'start'):
             continue
         sx, sy = seg.start.X, seg.start.Y
         ex, ey = seg.end.X, seg.end.Y
         if sx == ex and sy == ey:
             continue
+        matched_nets.add(net_name)
         d_parts.append(f"M {sx:.4f} {sy:.4f} L {ex:.4f} {ey:.4f}")
-    return " ".join(d_parts)
+    return " ".join(d_parts), matched_nets
 
 
 def build_path_element(d: str, style: Dict, path_id: str) -> str:
@@ -316,7 +326,14 @@ def draw_path_to_pcb_svg(
     path_id_prefix: str = "mcp_pcb_path",
     style: Optional[Dict] = None,
 ) -> Dict[str, Any]:
-    result = {"success": False, "written_files": [], "errors": []}
+    result = {
+        "success": False,
+        "written_files": [],
+        "errors": [],
+        "highlighted_nets": [],
+        "not_found_nets": [],
+        "unrouted_nets": [],
+    }
 
     try:
         board = Board.from_file(pcb_path)
@@ -325,9 +342,31 @@ def draw_path_to_pcb_svg(
         return result
 
     net_map = {n.number: n.name for n in board.nets}
+    board_net_names = set(net_map.values())
     active_style = {**DEFAULT_STYLE, **(style or {})}
 
-    d = tracks_to_svg_path(board.traceItems, net_map, nets)
+    not_found_nets = [n for n in nets if n not in board_net_names]
+    known_nets = [n for n in nets if n in board_net_names]
+
+    for n in not_found_nets:
+        suggestions = difflib.get_close_matches(n, board_net_names, n=3)
+        if suggestions:
+            result["errors"].append(f"Net '{n}' not found on PCB. Did you mean: {', '.join(suggestions)}?")
+        else:
+            result["errors"].append(f"Net '{n}' not found on PCB.")
+
+    d, matched_nets = tracks_to_svg_path(board.traceItems, net_map, known_nets)
+
+    unrouted_nets = [n for n in known_nets if n not in matched_nets]
+    for n in unrouted_nets:
+        result["errors"].append(
+            f"Net '{n}' exists on the PCB but has no routed tracks/vias (pad-to-pad connection only?)."
+        )
+
+    result["not_found_nets"] = not_found_nets
+    result["unrouted_nets"] = unrouted_nets
+    result["highlighted_nets"] = sorted(matched_nets)
+
     if not d:
         result["errors"].append("No matching tracks found for given nets")
         return result

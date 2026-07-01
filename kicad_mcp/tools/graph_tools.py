@@ -13,7 +13,7 @@ import hashlib
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
 from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files, plot_svg_schematic, plot_svg_pcb, draw_path_to_pcb_svg
-from kicad_mcp.utils.file_utils import get_project_files
+from kicad_mcp.utils.file_utils import get_project_files, find_component_sheets
 from kicad_mcp.utils.svg_file_server import IMAGE_VIEW_URI, FILE_SERVER_PORT, start_or_update_file_server
 
 project_cache: Dict[str, Dict[str, Any]] = {}
@@ -71,6 +71,37 @@ def get_data(project_path: str, schematic_path: str) -> tuple[CircuitGraph, Dict
 def hash_file(path):
     with open(path, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
+
+
+def missing_component_error(project_path: str, schematic_path: str, graph, refs: list) -> str:
+    """Build a helpful error message for a component reference not found in the current
+    schematic graph, pointing out other sheets that do contain it (cross-sheet lookups
+    must be run against the project's root schematic).
+    """
+
+    hints = []
+    for ref in refs:
+        ref_upper = ref.upper()
+        if ref_upper in graph.adjacency_list:
+            continue
+
+        try:
+            sheets = find_component_sheets(project_path, ref_upper, exclude_path=schematic_path)
+        except Exception:
+            sheets = []
+
+        if sheets:
+            names = ", ".join(os.path.basename(s) for s in sheets)
+            hints.append(
+                f"Component '{ref}' not found in '{os.path.basename(schematic_path)}', "
+                f"but exists in: {names}. For cross-sheet paths, pass the project's root "
+                f"schematic (not a sub-sheet) as schematic_path - the tool resolves "
+                f"hierarchical connections itself."
+            )
+        else:
+            hints.append(f"Component '{ref}' not found anywhere in this project.")
+
+    return " ".join(hints) if hints else "Please enter valid components"
 
 
 def register_graph_tools(mcp: FastMCP) -> None:
@@ -185,6 +216,13 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
 
             if not path_result.get("success"):
+                if path_result.get("error") == "Please enter valid components":
+                    path_result = {
+                        **path_result,
+                        "error": missing_component_error(
+                            project_path, schematic_path, graph, [start_component, end_component]
+                        ),
+                    }
                 return {
                     **path_result,
                     "start_component": start_component,
@@ -257,7 +295,9 @@ def register_graph_tools(mcp: FastMCP) -> None:
             if not path_result.get("success"):
                 return {
                     "success": False,
-                    "error": f"No neighbors found for {center_component}",
+                    "error": missing_component_error(
+                        project_path, schematic_path, graph, [center_component]
+                    ),
                     "center_component": center_component,
                     "radius": radius,
                 }
@@ -338,7 +378,14 @@ def register_graph_tools(mcp: FastMCP) -> None:
             )
 
             if not path_result.get("success"):
-                return json.dumps(path_result, ensure_ascii=False)            
+                if path_result.get("error") == "Please enter valid components":
+                    path_result = {
+                        **path_result,
+                        "error": missing_component_error(
+                            project_path, schematic_path, graph, [start_component, end_component]
+                        ),
+                    }
+                return json.dumps(path_result, ensure_ascii=False)
 
             wire_segments_formatted = path_result.get("wire_segments_formatted", [])
             wire_only = [
@@ -440,10 +487,24 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 style={"stroke": svg_stroke_color, "stroke_width": svg_stroke_width},
             )
 
-            if not svg_result.get("success"):
-                return json.dumps({"error": f"SVG draw failed: {svg_result.get('errors')}"})
+            highlighted = svg_result.get("highlighted_nets", [])
+            not_found = svg_result.get("not_found_nets", [])
+            unrouted = svg_result.get("unrouted_nets", [])
 
-            summary = f"Highlighted nets: {', '.join(path_nets)}"
+            if not svg_result.get("success"):
+                return json.dumps({
+                    "error": f"SVG draw failed: {svg_result.get('errors')}",
+                    "highlighted": highlighted,
+                    "not_found": not_found,
+                    "unrouted": unrouted,
+                })
+
+            summary_parts = [f"Highlighted nets: {', '.join(highlighted)}"] if highlighted else []
+            if not_found:
+                summary_parts.append(f"Not found: {', '.join(not_found)}")
+            if unrouted:
+                summary_parts.append(f"Exists but unrouted: {', '.join(unrouted)}")
+            summary = " | ".join(summary_parts)
 
             project_root = os.path.dirname(os.path.abspath(project_path))
             server_root  = start_or_update_file_server(project_root)
@@ -454,6 +515,10 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 "urls": [url],
                 "names": [os.path.basename(svg_path)],
                 "summary": summary,
+                "highlighted": highlighted,
+                "not_found": not_found,
+                "unrouted": unrouted,
+                "errors": svg_result.get("errors", []),
             })
 
         except Exception as e:
