@@ -34,8 +34,6 @@ This will:
   - File paths
   - Last modified dates
 
-The listing is sorted by last modified date, with most recently modified projects first.
-
 #### How Project Discovery Works
 
 Projects are discovered by:
@@ -74,14 +72,12 @@ Example output:
 ```
 
 
-## Project Resources
+## Project Resources and Tools
 
-The server provides several resources for accessing project information:
+- `list_projects()` (tool) - Finds and lists all KiCad projects on the system
+- `kicad://project/{project_path}` (resource) - Details about a specific project
 
-- `kicad://projects` - List of all projects
-- `kicad://project/{project_path}` - Details about a specific project
-
-These resources can be accessed programmatically by other MCP clients or directly referenced in conversations.
+The resource can be accessed programmatically by other MCP clients or directly referenced in conversations.
 
 ## Tips for Project Management
 

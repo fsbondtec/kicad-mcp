@@ -1,13 +1,6 @@
 from collections import defaultdict, deque
 from typing import Any, Dict, List
 import sys
-
-# new Kicad API instead of pcbnew:
-from kipy import KiCad
-from kipy.common_types import Vector2
-from kipy.board_types import BoardSegment
-from kipy.util import board_layer
-
 from kiutils.schematic import Schematic
 
 from kicad_mcp.utils.wire_graph import *
@@ -323,7 +316,6 @@ class CircuitGraph:
 
                 self.edges[edge_key]["pins"].append(pin_num)
 
-    ######################### Methods for Wire Graph #########################
 
     def find_path_with_wire_segments(self, start: str, end: str, 
                                   ignore_power: bool, 

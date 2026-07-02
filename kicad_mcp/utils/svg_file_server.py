@@ -11,6 +11,9 @@ from typing import Optional
 
 
 def _get_free_port() -> int:
+    """
+    Finds and returns an unused local TCP port.
+    """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
         return s.getsockname()[1]
@@ -26,16 +29,20 @@ _file_server_lock = threading.Lock()
 
 class _CORSRequestHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
+        """
+        Adds CORS and no-cache headers to every response.
+        """
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
     def log_message(self, format, *args):
-        pass  # suppress access logs
+        pass
 
 
 def start_or_update_file_server(project_dir: str) -> str:
-    """Start the file server rooted one level above project_dir.
+    """
+    Starts the shared file server, expanding its served root to cover new project directories.
     """
     global _file_server, _root_directory
 

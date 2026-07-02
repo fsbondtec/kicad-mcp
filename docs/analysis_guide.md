@@ -49,12 +49,11 @@ This will provide:
 
 ## Available Resources
 
-The server provides several resources for accessing design information:
+The server provides a resource for accessing design information:
 
 - `kicad://schematic/{schematic_path}` - Information from a schematic file
-- `kicad://pcb/{pcb_path}` - Information from a PCB file
 
-These resources can be accessed programmatically by other MCP clients or directly referenced in conversations.
+This resource can be accessed programmatically by other MCP clients or directly referenced in conversations.
 
 ## Tips for Better Analysis
 

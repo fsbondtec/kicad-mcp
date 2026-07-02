@@ -2,12 +2,9 @@ import difflib
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
-from xml.etree import ElementTree as ET
 import sys
 
 from kicad_mcp.utils.kicad_cli import *
-from kicad_mcp.utils.file_utils import get_project_files 
-
 from kiutils.board import Board
 
 
@@ -24,6 +21,9 @@ DEFAULT_STYLE = {
 }
 
 def plot_svg_schematic(project_path: str):
+    """
+    Exports the project's schematic to SVG via kicad-cli.
+    """
     try:
         cli_path = get_kicad_cli_path(required=True)
     except KiCadCLIError as e:
@@ -57,6 +57,9 @@ def plot_svg_schematic(project_path: str):
 
     
 def plot_svg_pcb(project_path: str):
+    """
+    Exports the PCB's copper layers to SVG via kicad-cli and returns the output path.
+    """
     try:
         cli_path = get_kicad_cli_path(required=True)
     except KiCadCLIError as e:
@@ -173,12 +176,8 @@ def segments_to_svg_path(segments: List[Dict]) -> str:
     return " ".join(d_parts)
 
 def tracks_to_svg_path(segments, net_map: dict, nets: list) -> Tuple[str, set]:
-    """Converts kiutils track segments to an SVG path string.
-
-    Returns:
-        Tuple of (svg path data, set of net names that actually contributed a segment).
-        A net can be present in `nets` but absent from the returned set if it exists
-        on the board but has no routed tracks/vias (e.g. pad-to-pad only).
+    """
+    Converts kiutils track segments matching the given nets into an SVG path string and the set of nets actually drawn.
     """
     d_parts = []
     matched_nets = set()
@@ -199,7 +198,9 @@ def tracks_to_svg_path(segments, net_map: dict, nets: list) -> Tuple[str, set]:
 
 
 def build_path_element(d: str, style: Dict, path_id: str) -> str:
-    """Creates SVG <path>-Tag as string."""
+    """
+    Creates an SVG <path> element string with the given style.
+    """
     sw = style["stroke_width"]
     return (
         f'<path id="{path_id}" '
@@ -213,7 +214,9 @@ def build_path_element(d: str, style: Dict, path_id: str) -> str:
     )
 
 def inject_into_svg(svg_path: str, new_elements: str, path_id_prefix: str) -> bool:
-    """Add path before svg closing tag"""
+    """
+    Inserts or replaces the overlay path elements in an SVG file before its closing tag.
+    """
 
     with open(svg_path, "r", encoding="utf-8") as f:
         content = f.read()
@@ -250,7 +253,7 @@ def draw_path_to_svg(
     svg_map: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
     """
-    draw wire segments in svg files
+    Draws wire segments onto their matching schematic SVG files.
     """
     result = {
         "success":       False,
@@ -350,6 +353,9 @@ def draw_path_to_pcb_svg(
     path_id_prefix: str = "mcp_pcb_path",
     style: Optional[Dict] = None,
 ) -> Dict[str, Any]:
+    """
+    Resolves the requested nets against the PCB and injects matching track highlights into the PCB SVG.
+    """
     result = {
         "success": False,
         "written_files": [],

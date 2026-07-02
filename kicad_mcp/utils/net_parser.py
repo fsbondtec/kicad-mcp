@@ -1,7 +1,6 @@
 from kinparse import parse_netlist
 import os
-from typing import Any, Dict, List
-from collections import defaultdict
+import sys
 import subprocess
 import tempfile
 
@@ -9,6 +8,10 @@ from kicad_mcp.utils.cli_drc import find_kicad_cli
 
 
 class NetlistParser:
+    """
+    Exports a schematic's netlist via kicad-cli and parses it into components and nets.
+    """
+
     def __init__(self, schematic_path: str):
         self.components = {}
         self.nets = {}
@@ -16,8 +19,10 @@ class NetlistParser:
         self.netlist = None
 
     def export_netlist(self):
+        """
+        Exports the schematic to a temporary KiCad s-expression netlist file and reads it into memory.
+        """
         try:
-            # temporary directory for output
             with tempfile.TemporaryDirectory() as temp_dir:
                 output_ext = ".net"  # standard output, kinparse works with .net
 
@@ -44,21 +49,24 @@ class NetlistParser:
                 process = subprocess.run(cmd, capture_output=True, text=True)
 
                 if process.returncode != 0:
-                    print(f"Netlist export failed: {process.stderr.strip()}")
+                    print(f"Netlist export failed: {process.stderr.strip()}", file=sys.stderr)
 
                 if not os.path.exists(output_file):
-                    print(f"Netlist file not created: {output_file}")
+                    print(f"Netlist file not created: {output_file}", file=sys.stderr)
 
                 if output_file and os.path.exists(output_file):
                     with open(output_file, "r") as f:
                         self.netlist = f.read()
                 else:
-                    print("Output file does not exist")
+                    print("Output file does not exist", file=sys.stderr)
 
         except Exception as e:
-            print(f"Error during netlist export: {str(e)}")
+            print(f"Error during netlist export: {str(e)}", file=sys.stderr)
 
     def structure_data(self):
+        """
+        Converts the raw parsed netlist into component and net dictionaries, dropping unconnected nets.
+        """
         nlst = parse_netlist(self.netlist)
         for part in nlst.parts:
             component_data = {

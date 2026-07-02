@@ -18,23 +18,29 @@ LABEL_PREFIX = "label:"
 
 @dataclass
 class WireSegment:
-    """Edge: Wire-Segment"""
+    """
+    Represents one wire (or virtual bridge) edge between two graph nodes.
+    """
     start: NodeType
     end: NodeType
     id: str
     sheet: str = ""
 
-
-    #return the other end of the wire  
     def get_other_end(self, node: NodeType, tol: float = 0.01) -> Optional[NodeType]:
+        """
+        Returns the endpoint of this segment opposite the given node.
+        """
         if self.nodes_equal(self.start, node):
             return self.end
         elif self.nodes_equal(self.end, node):
             return self.start
         return None
-    
+
     @staticmethod
     def nodes_equal(n1: NodeType, n2: NodeType, tol: float = 0.01) -> bool:
+        """
+        Checks whether two nodes refer to the same label, pin, or position within tolerance.
+        """
         # label nodes:
         if isinstance(n1, str) and isinstance(n2, str):
             return n1 == n2
@@ -51,9 +57,15 @@ class WireSegment:
         return False
     
 
-#Graph for all the geometric connections
 class GlobalWireGraph:
+    """
+    Builds a geometric graph of wires, component pins, and labels across a schematic's sheets.
+    """
+
     def __init__(self, tolerance: float = 0.01):
+        """
+        Initializes empty graph storage and label-position tracking.
+        """
         self.segments = []  # all edges(Wire + Bridges)
         self.adjacency = defaultdict(list)  # position -> [edges], node -> Wire Segment
         self.component_pins = {}  # comp_ref -> {pin_num: (x, y)}
@@ -67,23 +79,31 @@ class GlobalWireGraph:
     
     def _add_wire(self, start: NodeType, end: NodeType,
                   wire_id: str, sheet: str = ""):
+        """
+        Creates a wire segment and indexes it under both of its endpoints.
+        """
         seg = WireSegment(start=start, end=end, id=wire_id, sheet=sheet)
         self.segments.append(seg)
         self.adjacency[start].append(seg)
         self.adjacency[end].append(seg)
-        
 
     def add_wire(self, start: NodeType, end: NodeType, wire_id: str, sheet: str = ""):
+        """
+        Adds a wire segment between two nodes.
+        """
         self._add_wire(start, end, wire_id, sheet)
 
-
     def add_component_pins(self, comp_ref: str, pins: Dict[str, Tuple[float, float]]):
-        """match pins with component"""
+        """
+        Stores the absolute pin positions for a component.
+        """
         self.component_pins[comp_ref] = pins
 
     def find_wire_path_between_components(self, comp_a: str, comp_b: str, allowed_components: set = None) -> Optional[List]:
-        """BFS from all pins of comp_a to pin of comp_b"""
-        
+        """
+        Finds a wire path connecting any pin of comp_a to any pin of comp_b via BFS.
+        """
+
         if comp_a not in self.component_pins or comp_b not in self.component_pins:
             return None
         
@@ -129,14 +149,21 @@ class GlobalWireGraph:
         return None
 
     def is_pin_node(self, node: NodeType) -> bool:
-        """check if node is pin node"""
+        """
+        Checks whether a node represents a component pin.
+        """
         return (isinstance(node, tuple) and len(node) == 2 and isinstance(node[0], str))
 
     def nodes_equal(self, n1: NodeType, n2: NodeType) -> bool:
-        """compare nodes"""
+        """
+        Checks whether two nodes are equal within the graph's tolerance.
+        """
         return WireSegment.nodes_equal(n1, n2, self.tolerance)
-    
+
     def build_from_project(self, project_path: str):
+        """
+        Parses every schematic sheet in the project and links their hierarchical labels.
+        """
         files = get_project_files(project_path)
         
         if "schematic" not in files:
@@ -162,6 +189,9 @@ class GlobalWireGraph:
         self.connect_hierarchical_labels()
 
     def parse_sheet(self, sch: Schematic, sch_path: str, wire_id: int) -> int:
+        """
+        Extracts wires, bus entries, and labels from a single schematic sheet.
+        """
         # component pins:
         self.parse_component_pins_for_wire_graph(sch)
 
@@ -207,8 +237,10 @@ class GlobalWireGraph:
         return wire_id
 
     def collect_labels(self, sch: Schematic, sch_path: str):
-        """collects all the labels of the sheets"""
-       
+        """
+        Records the position of every global, hierarchical, and local label, and sheet pin on a sheet.
+        """
+
         for item in sch.globalLabels:
             name = item.text.strip()
             pos  = (item.position.X, item.position.Y)
@@ -232,7 +264,9 @@ class GlobalWireGraph:
                 self._label_positions[sch_path][f"hier:{name}"].append(pos)
 
     def connect_hierarchical_labels(self):
-        """makes a virtual connection between the matching hierarchical labels of the sheets"""
+        """
+        Bridges hierarchical labels that share a name across sheets with virtual wire segments.
+        """
         hier_label_positions: Dict[str, List[Tuple[float, float]]] = defaultdict(list)
 
         for sch_path, label_dict in self._label_positions.items():
@@ -251,8 +285,10 @@ class GlobalWireGraph:
 
     
     def parse_component_pins_for_wire_graph(self, sch: Schematic):
-        """calculate the component pin positions"""
-        
+        """
+        Computes each component's absolute pin positions from its library symbol and placement.
+        """
+
         for symbol in sch.schematicSymbols:
             for instance in symbol.instances:
                 for path in instance.paths:
@@ -307,14 +343,18 @@ class GlobalWireGraph:
 
     @staticmethod
     def find_lib_symbol(sch: Schematic, entry_name: str):
-        """find library symbol for a entry_name"""
+        """
+        Finds the library symbol definition matching the given entry name.
+        """
         for lib_sym in sch.libSymbols:
             if lib_sym.entryName == entry_name:
                 return lib_sym
         return None
-    
+
     def _resolve_position(self, pos: Tuple[float, float], tolerance: float = 0.1) -> NodeType:
-        "matches the positions with component pins or returns only the position if no pin matches"
+        """
+        Resolves a coordinate to a nearby component pin, or returns the rounded coordinate itself.
+        """
         for comp_ref, pins in self.component_pins.items():
             for pin_num, pin_pos in pins.items():
                 dist = ((pin_pos[0] - pos[0])**2 + (pin_pos[1] - pos[1])**2)**0.5
@@ -325,6 +365,9 @@ class GlobalWireGraph:
 
                 
     def find_node_at_position(self, pos, tolerance: float = 0.1) -> NodeType:
+        """
+        Resolves a coordinate to its matching graph node (pin or bare position).
+        """
         return self._resolve_position(pos, tolerance)
 
 

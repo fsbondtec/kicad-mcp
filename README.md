@@ -7,7 +7,7 @@ This guide will help you set up a Model Context Protocol (MCP) server for KiCad.
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
-- [Installation Steps](#installation-steps)
+- [Build](#build)
 - [Understanding MCP Components](#understanding-mcp-components)
 - [Feature Highlights](#feature-highlights)
 - [Natural Language Interaction](#natural-language-interaction)
@@ -15,36 +15,51 @@ This guide will help you set up a Model Context Protocol (MCP) server for KiCad.
 - [Configuration](#configuration)
 - [Development Guide](#development-guide)
 - [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [Future Development Ideas](#future-development-ideas)
 - [License](#license)
 
 ## Prerequisites
 
-- macOS, Windows, or Linux
+- Windows
 - Python 3.10 or higher
 - KiCad 9.0 or higher
-- uv 0.8.0 or higher
+- [uv](https://docs.astral.sh/uv/) 0.8.0 or higher **or** Miniconda/Anaconda
 - Claude Desktop (or another MCP client)
 
 ## Build
 
 ### 1. Set Up Your Python Environment
 
-First, let's install dependencies and set up our environment:
+First, let's install dependencies and set up our environment. Pick either `uv` (uses `pyproject.toml`/`uv.lock`) or `conda` (uses `environment.yml`), both are fully supported.
 
 ```bash
 # Clone the repository
 git clone https://github.com/fsbondtec/kicad-mcp.git
 cd kicad-mcp
+```
 
+**Option A: uv**
+
+```bash
+# Create the virtual environment and install dependencies
+uv sync
+
+# Run all tests
+uv run pytest tests/ -v
+
+# run server
+uv run kicad-mcp
+```
+
+**Option B: conda**
+
+```bash
 # Create the environment from environment.yml
 conda env create -f environment.yml
 
 # Activate the environment
 conda activate kicad-mcp
 
-#Install package in editable mode
+# Install package in editable mode
 pip install -e .
 
 # Run all tests
@@ -56,8 +71,9 @@ kicad-mcp
 
 ### 2. Configure Your Environment
 
-Change the path directly in `config.py`
-where the global variables `KICAD_USER_DIR` and `KICAD_APP_PATH` should be changed
+`KICAD_USER_DIR` and `KICAD_APP_PATH` default to platform-specific paths and are stored in `kicad-mcp-config.json`, auto-created on first run under Claude's "Claude Extensions Settings" folder (`%APPDATA%\Claude\Claude Extensions Settings\` on Windows). Edit that file to point at a different KiCad user/app directory, or change the hardcoded defaults directly in `kicad_mcp/config.py`.
+
+Additional project search directories can be set via the `KICAD_SEARCH_PATHS` environment variable - see [Configuration](#configuration).
 
 
 ### 3. Configure an MCP Client
@@ -66,12 +82,9 @@ Now, let's configure Claude Desktop to use our MCP server:
 
 1. Create or edit the Claude Desktop configuration file:
 
-```bash
-# Create the directory if it doesn't exist
-mkdir -p ~/Library/Application\ Support/Claude
-
-# Edit the configuration file
-vim ~/Library/Application\ Support/Claude/claude_desktop_config.json
+```
+mkdir %APPDATA%\Claude
+notepad %APPDATA%\Claude\claude_desktop_config.json
 ```
 
 Or change with Claude Desktop under:
@@ -92,7 +105,7 @@ Or change with Claude Desktop under:
 }
 ```
 
-Replace `/ABSOLUTE/PATH/TO/YOUR/PROJECT/kicad-mcp` with the actual path to your project directory.
+Replace `/ABSOLUTE/PATH/TO/YOUR/PROJECT/kicad-mcp` with the actual path to your project directory. If you set up the environment with `uv` instead of `conda`, point `command` at the interpreter uv created instead, e.g. `/ABSOLUTE/PATH/TO/YOUR/PROJECT/kicad-mcp/.venv/Scripts/python.exe`.
 
 ### 4. Restart Your MCP Client
 
@@ -109,20 +122,19 @@ The Model Context Protocol (MCP) defines three primary ways to provide capabilit
 - Provide data without performing significant computation
 - Used when the LLM needs to read information
 - Typically accessed programmatically by the client application
-- Example: `kicad://projects` returns a list of all KiCad projects
+- Example: `kicad://project/{project_path}` returns details about a specific KiCad project
 
 **Tools** are functions that perform actions or computations:
 - Similar to POST/PUT endpoints in REST APIs
 - Can have side effects (like opening applications or generating files)
 - Used when the LLM needs to perform actions in the world
 - Typically invoked directly by the LLM (with user approval)
-- Example: `open_project()` launches KiCad with a specific project
+- Example: `open_kicad_project(project_path)` launches KiCad with a specific project
 
 **Prompts** are reusable templates for common interactions:
 - Pre-defined conversation starters or instructions
 - Help users articulate common questions or tasks
 - Invoked by user choice (typically from a menu)
-- Example: The `debug_pcb_issues` prompt helps users troubleshoot PCB problems
 
 For more information on resources vs tools vs prompts, read the [MCP docs](https://modelcontextprotocol.io/docs/concepts/architecture).
 
@@ -155,7 +167,7 @@ For more examples and details on each feature, see the dedicated guides in the d
 While our documentation often shows examples like:
 
 ```
-Show me the DRC report for /Users/username/Documents/KiCad/my_project/my_project.kicad_pro
+Show me the DRC report for C:/Users/username/Documents/KiCad/my_project/my_project.kicad_pro
 ```
 
 You don't need to type the full path to your files! The LLM can understand more natural language requests.
@@ -181,14 +193,13 @@ Detailed documentation for each feature is available in the `docs/` directory:
 
 ## Configuration
 
-The KiCad MCP Server can be configured using environment variables or a `.env` file:
+| Setting | How it's set | Description | Example |
+|---------|-------------|-------------|---------|
+| `KICAD_SEARCH_PATHS` | Environment variable or `.env` file | Comma-separated list of additional directories to search for KiCad projects | `~/pcb,~/Electronics,~/Projects` |
+| `KICAD_USER_DIR` | `kicad-mcp-config.json` or `kicad_mcp/config.py` | Override the default KiCad user directory | `~/Documents/KiCadProjects` |
+| `KICAD_APP_PATH` | `kicad-mcp-config.json` or `kicad_mcp/config.py` | Override the default KiCad application path | `C:/Program Files/KiCad/9.0` |
 
-### Key Configuration Options
-| Environment Variable | Description | Example |
-|---------------------|-------------|---------|
-| `KICAD_SEARCH_PATHS` | Comma-separated list of directories to search for KiCad projects | `~/pcb,~/Electronics,~/Projects` |
-| `KICAD_USER_DIR` | Override the default KiCad user directory | `~/Documents/KiCadProjects` |
-| `KICAD_APP_PATH` | Override the default KiCad application path | `/Applications/KiCad7/KiCad.app` |
+`KICAD_USER_DIR` and `KICAD_APP_PATH` are **not** environment variables - see [Configure Your Environment](#2-configure-your-environment) for where to change them.
 
 See [Configuration Guide](docs/configuration.md) for more details.
 
@@ -202,7 +213,8 @@ The KiCad MCP Server is organized into a modular structure:
 kicad-mcp/
 ├── README.md                       # Project documentation
 ├── main.py                         # Entry point that runs the server
-├── requirements.txt                # Python dependencies
+├── pyproject.toml / uv.lock        # Python dependencies (uv)
+├── environment.yml                 # Python dependencies (conda)
 ├── kicad_mcp/                      # Main package directory
 │   ├── __init__.py
 │   ├── server.py                   # MCP server setup
@@ -240,8 +252,8 @@ If you encounter issues:
 2. **Server Errors:**
    - Check the terminal output when running the server in development mode
    - Check Claude logs at:
-     - `~/Library/Logs/Claude/mcp-server-kicad.log` (server-specific logs)
-     - `~/Library/Logs/Claude/mcp.log` (general MCP logs)
+     - `%APPDATA%\Claude\logs\mcp-server-kicad.log` (server-specific logs)
+     - `%APPDATA%\Claude\logs\mcp.log` (general MCP logs)
 
 3. **Working Directory Issues:**
    - The working directory for servers launched via client configs may be undefined

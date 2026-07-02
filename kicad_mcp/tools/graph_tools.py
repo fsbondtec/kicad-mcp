@@ -69,6 +69,9 @@ def get_data(project_path: str, schematic_path: str) -> tuple[CircuitGraph, Dict
 
 
 def hash_file(path):
+    """
+    Returns the SHA-256 hex digest of a file's contents.
+    """
     with open(path, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
 

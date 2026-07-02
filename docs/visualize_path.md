@@ -5,7 +5,7 @@
 The PCB Path visualisation Method allows you to:
 
 1. Mark a specific Path through the circuit in your PCB File
-2. to visualize those paths the pcb is plotted in a svg file by claude, all layers are plotted in one file
+2. to visualize those paths the pcb's copper layers (F.Cu/B.Cu) are plotted into one svg file by claude
 3. See how components are connected on the actual Layout
 4. Paths are being overwritten by adding new ones to the files
 

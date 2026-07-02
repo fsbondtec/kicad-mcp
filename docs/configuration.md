@@ -4,10 +4,10 @@ This guide explains how to configure the KiCad MCP Server to suit your environme
 
 ## Configuration Methods
 
-The KiCad MCP Server can be configured in multiple ways:
+The KiCad MCP Server can be configured in two ways, depending on the setting:
 
-1. **Environment Variables**: Set directly when running the server
-2. **Code Modifications**: Edit configuration constants in `kicad_mcp/config.py`
+1. **Environment Variables**: only `KICAD_SEARCH_PATHS` is read from the environment (or a `.env` file)
+2. **`kicad-mcp-config.json` or code modifications**: `KICAD_USER_DIR` and `KICAD_APP_PATH` are read from `kicad-mcp-config.json` (auto-created on first run under Claude's "Claude Extensions Settings" folder), falling back to the platform defaults hardcoded in `kicad_mcp/config.py`. They are **not** environment variables.
 
 ## Core Configuration Options
 
@@ -15,18 +15,18 @@ The KiCad MCP Server can be configured in multiple ways:
 
 These settings control where the server looks for KiCad projects:
 
-| Environment Variable | Description | Default Value | Example |
-|---------------------|-------------|---------------|---------|
-| `KICAD_USER_DIR` | The main KiCad user directory | `~/Documents/KiCad` (macOS/Windows)<br>`~/kicad` (Linux) | `~/Documents/KiCadProjects` |
-| `KICAD_SEARCH_PATHS` | Additional directories to search for KiCad projects (comma-separated) | None | `~/pcb,~/Electronics,~/Projects/KiCad` |
+| Setting | How it's set | Description | Default Value | Example |
+|---------|-------------|-------------|---------------|---------|
+| `KICAD_USER_DIR` | `kicad-mcp-config.json` / `config.py` | The main KiCad user directory | `~/Documents/KiCad` (macOS)<br>`~/KiCad/9.0/projects` (Windows)<br>`~/KiCad` (Linux) | `~/Documents/KiCadProjects` |
+| `KICAD_SEARCH_PATHS` | Environment variable | Additional directories to search for KiCad projects (comma-separated) | None | `~/pcb,~/Electronics,~/Projects/KiCad` |
 
 
 ### Application Paths
 
 These settings control how the server locates KiCad:
-| Environment Variable | Description | Default Value | Example |
-|---------------------|-------------|---------------|---------|
-| `KICAD_APP_PATH` | Path to the KiCad application | `/Applications/KiCad/KiCad.app` (macOS)<br>`C:\Program Files\KiCad` (Windows)<br>`/usr/share/kicad` (Linux) | `/Applications/KiCad7/KiCad.app` |
+| Setting | How it's set | Description | Default Value | Example |
+|---------|-------------|-------------|---------------|---------|
+| `KICAD_APP_PATH` | `kicad-mcp-config.json` / `config.py` | Path to the KiCad application | `/Applications/KiCad/KiCad.app` (macOS)<br>`C:/Program Files/KiCad/9.0/` (Windows)<br>`/usr/share/kicad` (Linux) | `C:/Program Files/KiCad/9.0` |
 
 
 
@@ -90,7 +90,7 @@ To configure Claude Desktop to use the KiCad MCP Server:
 
 ### Environment Variables in Client Configuration
 
-You can also set environment variables directly in the client configuration:
+You can also set `KICAD_SEARCH_PATHS` directly in the client configuration (this is the only setting actually read from the environment - `KICAD_APP_PATH`/`KICAD_USER_DIR` must be set via `kicad-mcp-config.json` or `config.py` as described above):
 
 ```json
 {
@@ -101,8 +101,7 @@ You can also set environment variables directly in the client configuration:
                 "/ABSOLUTE/PATH/TO/YOUR/PROJECT/kicad-mcp/main.py"
             ],
             "env": {
-                "KICAD_SEARCH_PATHS": "/custom/path1,/custom/path2",
-                "KICAD_APP_PATH": "/custom/path"
+                "KICAD_SEARCH_PATHS": "/custom/path1,/custom/path2"
             }
         }
     }
@@ -134,29 +133,17 @@ The server stores DRC history to track changes over time. By default, history is
 
 You can modify this in `kicad_mcp/utils/drc_history.py` if needed.
 
-### Python Path for KiCad Modules
-
-The server attempts to locate and add KiCad's Python modules to the Python path automatically. If this fails, you can modify the search paths in `kicad_mcp/utils/python_path.py`.
-
 ## Platform-Specific Configuration
 
 ### macOS
 
-On macOS, KiCad is typically installed in `/Applications/KiCad/KiCad.app`. If you have multiple versions or a non-standard installation, set:
-
-```
-KICAD_APP_PATH=/path/to/your/KiCad.app
-```
+On macOS, KiCad is typically installed in `/Applications/KiCad/KiCad.app`. If you have multiple versions or a non-standard installation, set `KICAD_APP_PATH` to your KiCad.app path in `kicad-mcp-config.json` (or `config.py`).
 
 ### Windows
 
-On Windows, KiCad is typically installed in `C:\Program Files\KiCad`. If you have a different installation location, set:
+On Windows, KiCad is typically installed in `C:\Program Files\KiCad\9.0\`. If you have a different installation location, set `KICAD_APP_PATH` accordingly in `kicad-mcp-config.json` (or `config.py`).
 
-```
-KICAD_APP_PATH=D:\Software\KiCad
-```
-
-For paths in the `.env` file on Windows, you can use either:
+For `KICAD_SEARCH_PATHS` in the `.env` file on Windows, you can use either:
 - Forward slashes: `KICAD_SEARCH_PATHS=C:/Users/Username/Documents/KiCad`
 - Escaped backslashes: `KICAD_SEARCH_PATHS=C:\\Users\\Username\\Documents\\KiCad`
 
@@ -167,11 +154,7 @@ On Linux, KiCad's location varies by distribution. Common paths include:
 - `/usr/local/share/kicad`
 - `/opt/kicad`
 
-Set the appropriate path in your configuration:
-
-```
-KICAD_APP_PATH=/opt/kicad
-```
+Set `KICAD_APP_PATH` to the appropriate path in `kicad-mcp-config.json` (or `config.py`).
 
 ## Debugging Configuration Issues
 
