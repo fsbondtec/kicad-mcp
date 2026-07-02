@@ -319,6 +319,30 @@ def draw_path_to_svg(
     result["success"] = any_written
     return result
 
+def resolve_pcb_nets(requested: List[str], board_net_names: set) -> Tuple[List[str], List[str], Dict[str, str]]:
+    """Match requested net names against the PCB's actual net names.
+    """
+    known_nets: List[str] = []
+    not_found_nets: List[str] = []
+    resolved_nets: Dict[str, str] = {}
+
+    for n in requested:
+        if n in board_net_names:
+            known_nets.append(n)
+            continue
+
+        leaf = n.rpartition("/")[2]
+        leaf_matches = [bn for bn in board_net_names if leaf and bn.rpartition("/")[2] == leaf]
+
+        if len(leaf_matches) == 1:
+            known_nets.append(leaf_matches[0])
+            resolved_nets[n] = leaf_matches[0]
+        else:
+            not_found_nets.append(n)
+
+    return known_nets, not_found_nets, resolved_nets
+
+
 def draw_path_to_pcb_svg(
     nets: list,
     svg_path: str,
@@ -333,6 +357,7 @@ def draw_path_to_pcb_svg(
         "highlighted_nets": [],
         "not_found_nets": [],
         "unrouted_nets": [],
+        "resolved_nets": {},
     }
 
     try:
@@ -345,8 +370,8 @@ def draw_path_to_pcb_svg(
     board_net_names = set(net_map.values())
     active_style = {**DEFAULT_STYLE, **(style or {})}
 
-    not_found_nets = [n for n in nets if n not in board_net_names]
-    known_nets = [n for n in nets if n in board_net_names]
+    known_nets, not_found_nets, resolved_nets = resolve_pcb_nets(nets, board_net_names)
+    result["resolved_nets"] = resolved_nets
 
     for n in not_found_nets:
         suggestions = difflib.get_close_matches(n, board_net_names, n=3)
