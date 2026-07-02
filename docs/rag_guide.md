@@ -62,7 +62,7 @@ The pipeline runs automatically in a background thread when the MCP server start
 | `{project root}/rag_cache/kicad_index.faiss` | FAISS vector index |
 | `{project root}/rag_cache/kicad_data.db` | SQLite database with chunk text and metadata |
 
-`KICAD_USER_DIR` defaults to `~/KiCad/9.0/projects` on Windows and can be overridden via the `KICAD_USER_DIR` environment variable. The `rag_cache/` directory sits inside the `kicad-mcp` project folder and is excluded from version control via `.gitignore`.
+`KICAD_USER_DIR` defaults to `~/KiCad/9.0/projects` on Windows. It is **not** an environment variable - override it via `kicad-mcp-config.json` (auto-created under Claude's "Claude Extensions Settings" folder) or `kicad_mcp/config.py`, see the main [Configuration](../README.md#configuration) section. The `rag_cache/` directory sits inside the `kicad-mcp` project folder and is excluded from version control via `.gitignore`.
 
 ## Manually Re-indexing
 

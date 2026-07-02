@@ -14,10 +14,7 @@ This guide helps you troubleshoot common issues with the KiCad MCP Server.
 
 1. **Missing Dependencies**
    - **Error:** `ModuleNotFoundError: No module named 'mcp'`
-   - **Solution:** Ensure you have installed the required packages
-     ```bash
-     pip install -r requirements.txt
-     ```
+   - **Solution:** Ensure you have installed the required packages, e.g. `uv sync` or `conda env create -f environment.yml` (see [README](../README.md#build))
 
 2. **Python Version**
    - **Error:** Syntax errors or unsupported features
@@ -109,10 +106,7 @@ This guide helps you troubleshoot common issues with the KiCad MCP Server.
 
 2. **Non-standard KiCad Installation**
    - **Problem:** KiCad installed in a non-standard location
-   - **Solution:** Set the `KICAD_APP_PATH` environment variable in your `.env` file:
-     ```
-     KICAD_APP_PATH=/path/to/KiCad/KiCad.app
-     ```
+   - **Solution:** Set `KICAD_APP_PATH` in `kicad-mcp-config.json` (auto-created under Claude's "Claude Extensions Settings" folder) or directly in `kicad_mcp/config.py` - it is **not** an environment variable
 
 3. **Python Path Issues**
    - **Problem:** KiCad Python modules not in Python path
@@ -137,10 +131,7 @@ This guide helps you troubleshoot common issues with the KiCad MCP Server.
 
 2. **KiCad User Directory Override**
    - **Problem:** Custom KiCad user directory not being searched
-   - **Solution:** Set `KICAD_USER_DIR` in your `.env` file:
-     ```
-     KICAD_USER_DIR=~/Documents/KiCadProjects
-     ```
+   - **Solution:** Set `KICAD_USER_DIR` in `kicad-mcp-config.json` or `kicad_mcp/config.py` - it is **not** an environment variable
 
 3. **File Extension Issues**
    - **Problem:** Projects not recognized due to file extensions
@@ -206,7 +197,7 @@ To diagnose issues, check the server logs:
 
 2. **Command Execution**
    - **Problem:** Issues launching KiCad from the server
-   - **Solution:** Ensure the KICAD_APP_PATH is set correctly in your `.env` file
+   - **Solution:** Ensure `KICAD_APP_PATH` is set correctly in `kicad-mcp-config.json` or `kicad_mcp/config.py`
 
 ### Linux Issues
 

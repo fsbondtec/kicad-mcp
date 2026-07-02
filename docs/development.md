@@ -4,14 +4,15 @@ This guide provides detailed information for developers who want to modify or ex
 
 ## Development Environment Setup
 
-1. **Set up your Python environment**:
+1. **Set up your Python environment** (see [README](../README.md#build) for the full walkthrough):
    ```bash
-   # Create and activate a virtual environment
-   python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   
-   # Install development dependencies
-   pip install -r requirements.txt
+   # uv
+   uv sync
+
+   # or conda
+   conda env create -f environment.yml
+   conda activate kicad-mcp
+   pip install -e .
    ```
 
 2. **Run the server**:
@@ -41,12 +42,13 @@ kicad-mcp/
 │   │   ├── projects.py                                 # Project listing resources
 │   │   ├── files.py                                    # File content resources
 │   │   ├── drc_resources.py                            # DRC report resources
+│   │   └── svg_viewer_resources.py                     # SVG viewer app resource
 │   ├── tools/                                          # Tool handlers
 │   │   ├── __init__.py
 │   │   ├── project_tools.py                            # Project management tools
 │   │   ├── drc_tools.py                                # DRC check tools
-|   |   |-- graph_tools.py                              #analyse schematic in graph structure
-
+│   │   ├── graph_tools.py                              # Analyse schematic/PCB in graph structure, path highlighting
+│   │   └── rag_tools.py                                # Datasheet search tools
 │   └── utils/                                          # Utility functions
 │       ├── __init__.py
 │       ├── file_utils.py                               # File handling utilities
@@ -54,8 +56,14 @@ kicad-mcp/
 │       ├── kicad_utils.py                              # KiCad-specific functions
 │       ├── drc_history.py                              # DRC history tracking
 │       ├── graph_analysis.py                           # Methods to create and search in Graphs
+│       ├── wire_graph.py                               # Geometric wire/label graph for schematics
 │       ├── kicad_cli.py                                # find Kicad CLI
 │       ├── net_parser.py                               # Parse Netlist
+│       ├── svg_utils.py                                # SVG plotting and path highlighting
+│       ├── svg_file_server.py                          # Local HTTP server for SVG previews
+│       ├── get_datasheets.py                           # Datasheet download pipeline
+│       ├── chunking_utils.py                           # Markdown chunking for RAG
+│       ├── search_rag.py                               # FAISS-backed datasheet search
 │       └── env.py                                      # Environment variable handling
 ```
 
@@ -195,7 +203,7 @@ To run tests:
 pytest
 
 # Run specific tests:
-pytest tests/test_tools.py::test_run_drc_check
+pytest tests/test_svg_utils.py::TestResolvePcbNets::test_exact_match_passes_through
 ```
 
 ## Debugging

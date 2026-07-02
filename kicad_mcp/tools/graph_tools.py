@@ -69,6 +69,9 @@ def get_data(project_path: str, schematic_path: str) -> tuple[CircuitGraph, Dict
 
 
 def hash_file(path):
+    """
+    Returns the SHA-256 hex digest of a file's contents.
+    """
     with open(path, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
 
@@ -427,7 +430,9 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
             def make_url(svg_file: str) -> str:
                 rel = os.path.relpath(svg_file, server_root).replace("\\", "/")
-                return f"http://localhost:{FILE_SERVER_PORT}/" + "/".join(urllib.parse.quote(p) for p in rel.split("/"))
+                path = "/".join(urllib.parse.quote(p) for p in rel.split("/"))
+                cache_bust = os.stat(svg_file).st_mtime_ns
+                return f"http://localhost:{FILE_SERVER_PORT}/{path}?v={cache_bust}"
 
             urls  = [make_url(p) for p in written]
             names = [os.path.basename(p) for p in written]
@@ -490,6 +495,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             highlighted = svg_result.get("highlighted_nets", [])
             not_found = svg_result.get("not_found_nets", [])
             unrouted = svg_result.get("unrouted_nets", [])
+            resolved = svg_result.get("resolved_nets", {})
 
             if not svg_result.get("success"):
                 return json.dumps({
@@ -497,9 +503,13 @@ def register_graph_tools(mcp: FastMCP) -> None:
                     "highlighted": highlighted,
                     "not_found": not_found,
                     "unrouted": unrouted,
+                    "resolved": resolved,
                 })
 
             summary_parts = [f"Highlighted nets: {', '.join(highlighted)}"] if highlighted else []
+            if resolved:
+                resolved_desc = ", ".join(f"{req} -> {actual}" for req, actual in resolved.items())
+                summary_parts.append(f"Resolved via sheet-path match: {resolved_desc}")
             if not_found:
                 summary_parts.append(f"Not found: {', '.join(not_found)}")
             if unrouted:
@@ -509,7 +519,9 @@ def register_graph_tools(mcp: FastMCP) -> None:
             project_root = os.path.dirname(os.path.abspath(project_path))
             server_root  = start_or_update_file_server(project_root)
             rel = os.path.relpath(svg_path, server_root).replace("\\", "/")
-            url = f"http://localhost:{FILE_SERVER_PORT}/" + "/".join(urllib.parse.quote(p) for p in rel.split("/"))
+            path = "/".join(urllib.parse.quote(p) for p in rel.split("/"))
+            cache_bust = os.stat(svg_path).st_mtime_ns
+            url = f"http://localhost:{FILE_SERVER_PORT}/{path}?v={cache_bust}"
 
             return json.dumps({
                 "urls": [url],
@@ -518,6 +530,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
                 "highlighted": highlighted,
                 "not_found": not_found,
                 "unrouted": unrouted,
+                "resolved": resolved,
                 "errors": svg_result.get("errors", []),
             })
 

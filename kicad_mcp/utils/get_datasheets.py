@@ -73,7 +73,6 @@ def download_datasheets(urls: list[str]):
     DATASHEET_DIR.mkdir(parents=True, exist_ok=True)
     session = curl_requests.Session()
 
-    #safe original datasheet urls
     mapping_file = DATASHEET_DIR / "url_mapping.json"
     url_mapping = {}
     if mapping_file.exists():
