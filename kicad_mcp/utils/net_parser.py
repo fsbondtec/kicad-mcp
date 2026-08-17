@@ -6,6 +6,42 @@ import tempfile
 
 from kicad_mcp.utils.cli_drc import find_kicad_cli
 
+UNSUPPORTED_NETLIST_BLOCKS = ("units", "groups", "variants")
+
+def strip_sexpr_block(text: str, tag: str) -> str:
+    """Remove every top-level "(<tag> ...)" s-expression block from `text`."""
+    marker = f"({tag}"
+    pieces = []
+    i = 0
+    n = len(text)
+    while True:
+        start = text.find(marker, i)
+        if start == -1:
+            pieces.append(text[i:])
+            break
+
+        after = start + len(marker)
+        if after < n and (text[after].isalnum() or text[after] == "_"):
+            pieces.append(text[i:after])
+            i = after
+            continue
+
+        pieces.append(text[i:start])
+        depth = 0
+        j = start
+        while j < n:
+            if text[j] == "(":
+                depth += 1
+            elif text[j] == ")":
+                depth -= 1
+                if depth == 0:
+                    j += 1
+                    break
+            j += 1
+        i = j
+
+    return "".join(pieces)
+
 
 class NetlistParser:
     """
@@ -67,7 +103,12 @@ class NetlistParser:
         """
         Converts the raw parsed netlist into component and net dictionaries, dropping unconnected nets.
         """
-        nlst = parse_netlist(self.netlist)
+        netlist = self.netlist
+        if netlist is not None:
+            for tag in UNSUPPORTED_NETLIST_BLOCKS:
+                netlist = strip_sexpr_block(netlist, tag)
+
+        nlst = parse_netlist(netlist)
         for part in nlst.parts:
             component_data = {
                 "lib_id": f"{part.lib}:{part.name}",
