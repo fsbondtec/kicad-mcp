@@ -2,15 +2,14 @@
 Design Rule Check (DRC) implementation using KiCad command-line interface.
 """
 
-import glob
 import os
 import json
-import re
+import shutil
 import subprocess
 import tempfile
 from typing import Dict, Any, Optional
 
-from kicad_mcp.config import system, TIMEOUT_CONSTANTS
+from kicad_mcp.config import system, KICAD_APP_PATH
 
 
 async def run_drc_via_cli(pcb_file: str) -> Dict[str, Any]:
@@ -32,7 +31,6 @@ async def run_drc_via_cli(pcb_file: str) -> Dict[str, Any]:
 
             # Find kicad-cli executable
             kicad_cli = find_kicad_cli()
-            from kicad_mcp.config import KICAD_APP_PATH
 
             if not kicad_cli:
                 print("kicad-cli not found in PATH or common installation locations")
@@ -100,114 +98,20 @@ async def run_drc_via_cli(pcb_file: str) -> Dict[str, Any]:
         return results
 
 
-VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)(.*)")
-
-cli_path_cache: Optional[str] = None
-
-def candidate_kicad_cli_paths() -> list:
-    """Collect every kicad-cli executable path found on this system.
+def find_kicad_cli() -> Optional[str]:
+    """Find the kicad-cli executable belonging to the configured KiCad installation.
 
     """
-    candidates = []
-
     if system == "Windows":
-        try:
-            result = subprocess.run(["where", "kicad-cli.exe"], capture_output=True, text=True)
-            if result.returncode == 0:
-                candidates.extend(result.stdout.strip().splitlines())
-        except Exception as e:
-            print(f"Error finding kicad-cli in PATH: {str(e)}")
+        candidate = os.path.join(KICAD_APP_PATH, "bin", "kicad-cli.exe")
+    elif system == "Darwin":  # macOS
+        candidate = os.path.join(KICAD_APP_PATH, "Contents", "MacOS", "kicad-cli")
+    else:  # Linux and other Unix-like systems
+        candidate = os.path.join(KICAD_APP_PATH, "bin", "kicad-cli")
 
-        candidates.extend(glob.glob("C:/Program Files/KiCad/*/bin/kicad-cli.exe"))
-        candidates.extend(glob.glob("C:/Program Files (x86)/KiCad/*/bin/kicad-cli.exe"))
-        candidates.append("C:/Program Files/KiCad/bin/kicad-cli.exe")
-        candidates.append("C:/Program Files (x86)/KiCad/bin/kicad-cli.exe")
-    else:
-        try:
-            result = subprocess.run(["which", "-a", "kicad-cli"], capture_output=True, text=True)
-            if result.returncode == 0:
-                candidates.extend(result.stdout.strip().splitlines())
-        except Exception as e:
-            print(f"Error finding kicad-cli in PATH: {str(e)}")
+    if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+        return candidate
 
-        if system == "Darwin":  # macOS
-            candidates.extend(glob.glob("/Applications/KiCad*/KiCad.app/Contents/MacOS/kicad-cli"))
-            candidates.append("/Applications/KiCad/kicad-cli")
-        else: 
-            candidates.extend(glob.glob("/opt/kicad*/bin/kicad-cli"))
-            candidates.append("/usr/bin/kicad-cli")
-            candidates.append("/usr/local/bin/kicad-cli")
-
-    seen = set()
-    unique_paths = []
-    for path in candidates:
-        if not path or not os.path.isfile(path) or not os.access(path, os.X_OK):
-            continue
-        real = os.path.realpath(path)
-        if real in seen:
-            continue
-        seen.add(real)
-        unique_paths.append(path)
-
-    return unique_paths
-
-
-def get_kicad_cli_version_info(cli_path: str):
-    """Return ((major, minor, patch), is_prerelease) for a kicad-cli executable.
-    """
-    try:
-        result = subprocess.run(
-            [cli_path, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT_CONSTANTS["kicad_cli_version_check"],
-        )
-    except Exception:
-        return None
-
-    if result.returncode != 0:
-        return None
-
-    output = (result.stdout or result.stderr).strip()
-    match = VERSION_RE.search(output)
-    if not match:
-        return None
-
-    major, minor, patch = (int(g) for g in match.groups()[:3])
-    suffix = match.group(4).strip()
-    is_prerelease = minor == 99 or bool(suffix)
-    return (major, minor, patch), is_prerelease
-
-
-def find_kicad_cli(force_refresh: bool = False) -> Optional[str]:
-    """Find the best kicad-cli executable installed on this system.
-    Among everything found, this
-    prefers the highest-numbered *official* release and only falls back to a
-    nightly/pre-release build if no official release is available.
-    """
-    global cli_path_cache
-
-    if cli_path_cache and not force_refresh and os.path.isfile(cli_path_cache):
-        return cli_path_cache
-
-    candidates = candidate_kicad_cli_paths()
-
-    stable_versions = []
-    prerelease_versions = []
-    for path in candidates:
-        info = get_kicad_cli_version_info(path)
-        if info is None:
-            continue
-        version, is_prerelease = info
-        (prerelease_versions if is_prerelease else stable_versions).append((version, path))
-
-    best_pool = stable_versions or prerelease_versions
-    if best_pool:
-        best_pool.sort(key=lambda item: item[0])
-        cli_path_cache = best_pool[-1][1]
-    elif candidates:
-        cli_path_cache = candidates[0]
-    else:
-        cli_path_cache = None
-
-    return cli_path_cache
+    # Fall back to whatever kicad-cli is available on PATH.
+    exe_name = "kicad-cli.exe" if system == "Windows" else "kicad-cli"
+    return shutil.which(exe_name)

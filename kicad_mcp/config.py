@@ -50,7 +50,7 @@ elif system == "Windows":
     appdata = os.environ.get("APPDATA") or os.path.expanduser("~/AppData/Roaming")
     _CLAUDE_EXTENSIONS_DIR = os.path.join(appdata, "Claude", "Claude Extensions Settings")
     _DEFAULT_USER_DIR = os.path.expanduser("~/KiCad/9.0/projects")
-    _DEFAULT_APP_PATH = "C:/Program Files/KiCad/9.0/"
+    _DEFAULT_APP_PATH = "C:/Program Files/KiCad/10.0/"
 elif system == "Linux":
     _CLAUDE_EXTENSIONS_DIR = os.path.expanduser("~/.config/Claude/Claude Extensions Settings")
     _DEFAULT_USER_DIR = os.path.expanduser("~/KiCad")
@@ -78,7 +78,7 @@ except Exception as e:
     print(f"[Warning] Could not load or save config file: {e}", file=sys.stderr)
 
 KICAD_USER_DIR = _mcp_config.get("KICAD_USER_DIR", _DEFAULT_USER_DIR)
-KICAD_APP_PATH = _mcp_config.get("KICAD_APP_PATH", _DEFAULT_APP_PATH)
+KICAD_APP_PATH = _DEFAULT_APP_PATH
 
 # Additional search paths from environment variable KICAD_SEARCH_PATHS
 # Users can specify custom project locations as comma-separated paths
