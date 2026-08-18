@@ -1,4 +1,4 @@
-from kinparse import parse_netlist
+import sexpdata
 import os
 import sys
 import subprocess
@@ -6,46 +6,33 @@ import tempfile
 
 from kicad_mcp.utils.cli_drc import find_kicad_cli
 
-UNSUPPORTED_NETLIST_BLOCKS = ("units", "groups", "variants")
+def sexp_children(node, tag):
+    """Return every child of `node` whose head symbol equals `tag`."""
+    if not isinstance(node, list):
+        return []
+    return [
+        child
+        for child in node[1:]
+        if isinstance(child, list) and child and isinstance(child[0], sexpdata.Symbol) and str(child[0]) == tag
+    ]
 
-def strip_sexpr_block(text: str, tag: str) -> str:
-    """Remove every top-level "(<tag> ...)" s-expression block from `text`."""
-    marker = f"({tag}"
-    pieces = []
-    i = 0
-    n = len(text)
-    while True:
-        start = text.find(marker, i)
-        if start == -1:
-            pieces.append(text[i:])
-            break
+def sexp_child(node, tag):
+    """Return the first child of `node` whose head symbol equals `tag`, or None."""
+    matches = sexp_children(node, tag)
+    return matches[0] if matches else None
 
-        after = start + len(marker)
-        if after < n and (text[after].isalnum() or text[after] == "_"):
-            pieces.append(text[i:after])
-            i = after
-            continue
 
-        pieces.append(text[i:start])
-        depth = 0
-        j = start
-        while j < n:
-            if text[j] == "(":
-                depth += 1
-            elif text[j] == ")":
-                depth -= 1
-                if depth == 0:
-                    j += 1
-                    break
-            j += 1
-        i = j
-
-    return "".join(pieces)
+def sexp_value(node):
+    """Extract the value of a (tag "value") node as a string, or None."""
+    if node is None or len(node) < 2:
+        return None
+    val = node[1]
+    return str(val) if isinstance(val, sexpdata.Symbol) else val
 
 
 class NetlistParser:
     """
-    Exports a schematic's netlist via kicad-cli and parses it into components and nets.
+    Exports a schematic's netlist via kicad-cli and parses it into components and nets
     """
 
     def __init__(self, schematic_path: str):
@@ -56,13 +43,11 @@ class NetlistParser:
 
     def export_netlist(self):
         """
-        Exports the schematic to a temporary KiCad s-expression netlist file and reads it into memory.
+        Exports the schematic to a temporary KiCad s-expression netlist file
         """
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
-                output_ext = ".net"  # standard output, kinparse works with .net
-
-                output_file = os.path.join(temp_dir, f"netlist{output_ext}")
+                output_file = os.path.join(temp_dir, "netlist.net")
 
                 kicad_cli = find_kicad_cli()
                 if not kicad_cli:
@@ -87,11 +72,8 @@ class NetlistParser:
                 if process.returncode != 0:
                     print(f"Netlist export failed: {process.stderr.strip()}", file=sys.stderr)
 
-                if not os.path.exists(output_file):
-                    print(f"Netlist file not created: {output_file}", file=sys.stderr)
-
-                if output_file and os.path.exists(output_file):
-                    with open(output_file, "r") as f:
+                if os.path.exists(output_file):
+                    with open(output_file, "r", encoding="latin-1") as f:
                         self.netlist = f.read()
                 else:
                     print("Output file does not exist", file=sys.stderr)
@@ -101,34 +83,49 @@ class NetlistParser:
 
     def structure_data(self):
         """
-        Converts the raw parsed netlist into component and net dictionaries, dropping unconnected nets.
+        Converts the raw netlist s-expression tree into component and net dictionaries, dropping unconnected nets.
         """
-        netlist = self.netlist
-        if netlist is not None:
-            for tag in UNSUPPORTED_NETLIST_BLOCKS:
-                netlist = strip_sexpr_block(netlist, tag)
+        if not self.netlist:
+            return {"components": self.components, "nets": self.nets}
 
-        nlst = parse_netlist(netlist)
-        for part in nlst.parts:
-            component_data = {
-                "lib_id": f"{part.lib}:{part.name}",
-                "value": part.value,
-                "description": part.desc,
-                "name": part.name,
-            }
+        tree = sexpdata.loads(self.netlist)
 
-            self.components[part.ref] = component_data
+        components_node = sexp_child(tree, "components")
+        if components_node:
+            for comp in sexp_children(components_node, "comp"):
+                ref = sexp_value(sexp_child(comp, "ref"))
+                value = sexp_value(sexp_child(comp, "value"))
 
-        for net in nlst.nets:
-            net_pins = []
+                libsource = sexp_child(comp, "libsource")
+                lib = sexp_value(sexp_child(libsource, "lib")) if libsource else None
+                part = sexp_value(sexp_child(libsource, "part")) if libsource else None
+                desc = sexp_value(sexp_child(libsource, "description")) if libsource else None
 
-            # filter not connected nets
-            if "unconnected" not in net.name:
-                for pin in net.pins:
-                    net_pins.append(
-                        {"component": pin.ref, "pin": pin.num, "electrical_type": pin.type}
-                    )
+                self.components[ref] = {
+                    "lib_id": f"{lib}:{part}" if lib and part else None,
+                    "value": value,
+                    "description": desc,
+                    "name": part,
+                }
 
-                self.nets[net.name] = net_pins
+        nets_node = sexp_child(tree, "nets")
+        if nets_node:
+            for net in sexp_children(nets_node, "net"):
+                name = sexp_value(sexp_child(net, "name"))
 
+                if not name or "unconnected" in name:
+                    continue
+
+                net_pins = [
+                    {
+                        "component": sexp_value(sexp_child(node, "ref")),
+                        "pin": sexp_value(sexp_child(node, "pin")),
+                        "electrical_type": sexp_value(sexp_child(node, "pintype")),
+                    }
+                    for node in sexp_children(net, "node")
+                ]
+
+                self.nets[name] = net_pins
+
+       
         return {"components": self.components, "nets": self.nets}
