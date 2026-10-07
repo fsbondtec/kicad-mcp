@@ -11,17 +11,46 @@ from kiutils.schematic import Schematic
 
 
 
+def resolve_project_file(project_path: str) -> str:
+    """Resolve a project reference to its .kicad_pro file.
+
+    Accepts the .kicad_pro file itself, the project directory, or a path whose
+    sibling <path>.kicad_pro exists.
+
+    Args:
+        project_path: A .kicad_pro file, a project directory, or a path stem.
+
+    Returns:
+        Path to the .kicad_pro file, or the original input if none was found.
+    """
+    if project_path.endswith(".kicad_pro") and os.path.isfile(project_path):
+        return project_path
+
+    if os.path.isdir(project_path):
+        matches = [f for f in os.listdir(project_path) if f.endswith(".kicad_pro")]
+        if matches:
+            return os.path.join(project_path, matches[0])
+
+    candidate = f"{project_path}.kicad_pro"
+    if os.path.isfile(candidate):
+        return candidate
+
+    return project_path
+
+
 def get_project_files(project_path: str) -> dict[str, str]:
     """Get all files related to a KiCad project.
 
     Args:
-        project_path: Path to the .kicad_pro file
+        project_path: Path to the .kicad_pro file (a project directory or path
+            stem is also accepted and resolved to the .kicad_pro).
 
     Returns:
         Dictionary mapping file types to file paths
     """
     from kicad_mcp.config import DATA_EXTENSIONS, KICAD_EXTENSIONS
 
+    project_path = resolve_project_file(project_path)
     project_dir = os.path.dirname(project_path)
     project_name = get_project_name_from_path(project_path)
 
