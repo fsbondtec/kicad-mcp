@@ -42,6 +42,70 @@ def classify_component(node: dict) -> str:
     return "boundary"
 
 
+def _pin_record(conn: dict) -> dict:
+    """Flatten a netlist connection into a pin record."""
+    return {
+        "component": conn["component"],
+        "pin": conn["pin"],
+        "pinfunction": conn.get("pinfunction"),
+        "electrical_type": conn.get("electrical_type"),
+    }
+
+
+def classify_block_boundary(graph, block_components):
+    """Classify the nets around a selected block on the pin level.
+
+    For every net that touches the block:
+      - port:     non-global net with pins inside AND outside the block,
+      - dangling: net with exactly one pin inside and none outside (a stub),
+      - internal: all pins inside the block (a purely internal net),
+      - global:   power / ground nets (reported separately for the reference /
+                  supply confirmation step, not treated as ports).
+
+    Args:
+        graph: a built CircuitGraph instance.
+        block_components: the component refs forming the block (from select_block).
+
+    Returns:
+        dict with ports, dangling, internal_nets and global_nets_touched.
+    """
+    block = {r.upper() for r in block_components}
+
+    ports = []
+    dangling = []
+    internal_nets = []
+    global_nets = []
+
+    for net_name, conns in graph.netlist_data["nets"].items():
+        inside = [c for c in conns if c["component"].upper() in block]
+        if not inside:
+            continue  
+
+        if net_name in graph.power_symbols:
+            global_nets.append(net_name)
+            continue
+
+        outside = [c for c in conns if c["component"].upper() not in block]
+
+        if outside:
+            ports.append({
+                "net": net_name,
+                "pins_inside": [_pin_record(c) for c in inside],
+                "pins_outside": [_pin_record(c) for c in outside],
+            })
+        elif len(inside) == 1:
+            dangling.append({"net": net_name, "pin": _pin_record(inside[0])})
+        else:
+            internal_nets.append(net_name)
+
+    return {
+        "ports": sorted(ports, key=lambda p: p["net"]),
+        "dangling": sorted(dangling, key=lambda d: d["net"]),
+        "internal_nets": sorted(internal_nets),
+        "global_nets_touched": sorted(global_nets),
+    }
+
+
 def select_block(graph, seed_refs, max_hops=6, max_size=60, max_fanout=8):
     """Grow a simulatable sub-circuit outward from one or more seed components.
 
@@ -121,6 +185,8 @@ def select_block(graph, seed_refs, max_hops=6, max_size=60, max_fanout=8):
                 block.add(nb)
                 queue.append((nb, hop + 1))
 
+    boundary = classify_block_boundary(graph, block)
+
     return {
         "success": True,
         "seeds": seeds,
@@ -131,6 +197,10 @@ def select_block(graph, seed_refs, max_hops=6, max_size=60, max_fanout=8):
             {"component": ref, "via_net": net}
             for ref, net in sorted(boundary_components.items())
         ],
+        "ports": boundary["ports"],
+        "dangling": boundary["dangling"],
+        "internal_nets": boundary["internal_nets"],
+        "global_nets_touched": boundary["global_nets_touched"],
         "stopped_nets": {
             "global": sorted(stopped_nets["global"]),
             "high_fanout": [
