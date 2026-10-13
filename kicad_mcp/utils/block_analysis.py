@@ -213,3 +213,49 @@ def select_block(graph, seed_refs, max_hops=6, max_size=60, max_fanout=8):
         "limits": {"max_hops": max_hops, "max_size": max_size,
                    "max_fanout": max_fanout},
     }
+
+
+def suggest_replacement(port: dict) -> dict:
+    """Suggest a replacement element for one block port from its outside pin types.
+
+    Only 'output' -> 'source, only 'input' -> 'open' anything else -> 'clarify'.
+    """
+
+    outside_types = sorted({
+        (p.get("electrical_type") or "unspecified").split("+")[0]
+        for p in port.get("pins_outside", [])
+    })
+
+    if outside_types == ["output"]:
+        suggestion = "source"
+        reason = "outside drives this net (output) -> replace with a source"
+    elif outside_types == ["input"]:
+        suggestion = "open"
+        reason = "outside only reads this net (input) -> leave open"
+    else:
+        suggestion = "clarify"
+        reason = f"ambiguous outside pin types {outside_types} -> please confirm"
+
+    return {
+        "net": port["net"],
+        "suggestion": suggestion,
+        "reason": reason,
+        "outside_types": outside_types,
+    }
+
+
+def suggest_replacements(ports: list) -> list:
+    """Run suggest_replacement over all ports of a block."""
+    return [suggest_replacement(p) for p in ports]
+
+
+def guess_voltage(net_name: str):
+    """Guess a supply voltage from a power-net name.
+    """
+    m = re.match(r"^([+-]?)(\d+)[Vv](\d*)", net_name)
+    if not m:
+        return None
+    sign = -1.0 if m.group(1) == "-" else 1.0
+    whole, frac = m.group(2), m.group(3)
+    value = float(whole) + (float(frac) / (10 ** len(frac)) if frac else 0.0)
+    return sign * value
