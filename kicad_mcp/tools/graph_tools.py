@@ -8,13 +8,11 @@ import urllib.parse
 from typing import Dict, Any
 from fastmcp import FastMCP
 from fastmcp.apps import AppConfig
-import hashlib
 
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
-from kicad_mcp.utils.block_analysis import select_block as select_block_fn
 from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files, plot_svg_schematic, plot_svg_pcb, draw_path_to_pcb_svg
-from kicad_mcp.utils.file_utils import get_project_files, find_component_sheets
+from kicad_mcp.utils.file_utils import get_project_files, find_component_sheets, hash_file
 from kicad_mcp.utils.svg_file_server import IMAGE_VIEW_URI, FILE_SERVER_PORT, start_or_update_file_server
 
 project_cache: Dict[str, Dict[str, Any]] = {}
@@ -67,14 +65,6 @@ def get_data(project_path: str, schematic_path: str) -> tuple[CircuitGraph, Dict
     }
 
     return graph, structured_data
-
-
-def hash_file(path):
-    """
-    Returns the SHA-256 hex digest of a file's contents.
-    """
-    with open(path, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
 
 
 def missing_component_error(project_path: str, schematic_path: str, graph, refs: list) -> str:
@@ -324,63 +314,6 @@ def register_graph_tools(mcp: FastMCP) -> None:
         except Exception as e:
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
     
-    @mcp.tool()
-    async def select_block(
-        project_path: str,
-        schematic_path: str,
-        seed_components: list,
-        max_hops: int,
-        max_size: int,
-        max_fanout: int,
-    ) -> Dict:
-        """
-        Select a simulatable sub-circuit by growing outward from seed components.
-
-        Traverses signal nets only and stops at global (power/ground) nets, boundary
-        components (ICs, arrays, varistors, ...) and high fan-out nets. Returns the
-        block members plus where and why the search stopped.
-
-        Args:
-            project_path (str): Path to the KiCad project directory.
-            schematic_path (str): Path to the KiCad schematic file (.kicad_sch).
-            seed_components (list): One or more reference designators to start from.
-            max_hops (int): Max BFS hops (in components) from any seed.
-            max_size (int): Max number of components in the block.
-            max_fanout (int): A net with more connections than this is a stop.
-
-        Returns:
-            Dict[str, Any]: block_components, block_nets, boundary_components,
-            stopped_nets, truncated flag and limits - or an error.
-        """
-        if not os.path.exists(schematic_path):
-            return {"success": False, "error": f"Schematic not found: {schematic_path}"}
-
-        if not seed_components:
-            return {"success": False, "error": "At least one seed component is required"}
-
-        try:
-            graph, _ = get_data(project_path, schematic_path)
-
-            result = select_block_fn(
-                graph, seed_components, max_hops, max_size, max_fanout
-            )
-
-            if not result.get("success"):
-                return {
-                    "success": False,
-                    "error": missing_component_error(
-                        project_path, schematic_path, graph,
-                        result.get("missing", seed_components),
-                    ),
-                }
-
-            return {"success": True, "schematic_path": schematic_path, **result}
-
-        except FileNotFoundError as e:
-            return {"success": False, "error": f"File not found: {str(e)}"}
-        except Exception as e:
-            return {"success": False, "error": f"Error selecting block: {str(e)}"}
-
     @mcp.tool(app=AppConfig(resource_uri=IMAGE_VIEW_URI))
     async def get_circuit_path_with_wires(
         project_path: str,

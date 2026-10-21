@@ -15,6 +15,11 @@ _PRIMITIVE_SIM_DEVICES = {"R", "C", "L", "D"}
 # pass straight through: test points, mounting holes and net ties.
 _PERMEABLE_RE = re.compile(r"testpoint|mountinghole|nettie", re.I)
 
+# default limits for growing a block (select_block)
+DEFAULT_MAX_HOPS = 6
+DEFAULT_MAX_SIZE = 60
+DEFAULT_MAX_FANOUT = 10
+
 def classify_component(node: dict) -> str:
     """Classify a component node as 'simulatable', 'permeable' or 'boundary'.
 
@@ -58,22 +63,21 @@ def classify_block_boundary(graph, block_components):
     For every net that touches the block:
       - port:     non-global net with pins inside AND outside the block,
       - dangling: net with exactly one pin inside and none outside (a stub),
-      - internal: all pins inside the block (a purely internal net),
       - global:   power / ground nets (reported separately for the reference /
                   supply confirmation step, not treated as ports).
+    Purely internal nets need no handling and are skipped.
 
     Args:
         graph: a built CircuitGraph instance.
         block_components: the component refs forming the block (from select_block).
 
     Returns:
-        dict with ports, dangling, internal_nets and global_nets_touched.
+        dict with ports, dangling and global_nets_touched.
     """
     block = {r.upper() for r in block_components}
 
     ports = []
     dangling = []
-    internal_nets = []
     global_nets = []
 
     for net_name, conns in graph.netlist_data["nets"].items():
@@ -95,18 +99,16 @@ def classify_block_boundary(graph, block_components):
             })
         elif len(inside) == 1:
             dangling.append({"net": net_name, "pin": _pin_record(inside[0])})
-        else:
-            internal_nets.append(net_name)
 
     return {
         "ports": sorted(ports, key=lambda p: p["net"]),
         "dangling": sorted(dangling, key=lambda d: d["net"]),
-        "internal_nets": sorted(internal_nets),
         "global_nets_touched": sorted(global_nets),
     }
 
 
-def select_block(graph, seed_refs, max_hops=6, max_size=60, max_fanout=8):
+def select_block(graph, seed_refs, max_hops=DEFAULT_MAX_HOPS, max_size=DEFAULT_MAX_SIZE,
+                 max_fanout=DEFAULT_MAX_FANOUT):
     """Grow a simulatable sub-circuit outward from one or more seed components.
 
     BFS over the bipartite component/net graph. It expands through simulatable and
@@ -123,8 +125,8 @@ def select_block(graph, seed_refs, max_hops=6, max_size=60, max_fanout=8):
         max_fanout: a net with more than this many connections is a stop.
 
     Returns:
-        dict with success, block_components, block_nets, boundary_components,
-        stopped_nets, truncated flag and the applied limits.
+        dict with success, block_components, ports, dangling, global_nets_touched,
+        high_fanout (nets not followed: [{net, fanout}]) and the truncated flag/reason.
     """
 
     if isinstance(seed_refs, str):
@@ -137,10 +139,8 @@ def select_block(graph, seed_refs, max_hops=6, max_size=60, max_fanout=8):
         return {"success": False, "error": "Please enter valid components",
                 "missing": missing}
 
-    block = set(seeds)                 
-    block_nets = set()                
-    boundary_components = {}          
-    stopped_nets = {"global": {}, "high_fanout": {}}
+    block = set(seeds)
+    high_fanout = {}
     visited = set(seeds)
     truncated = False
     truncation_reason = None
@@ -157,23 +157,18 @@ def select_block(graph, seed_refs, max_hops=6, max_size=60, max_fanout=8):
 
         for net in graph.adjacency_list[comp]:
             if net in graph.power_symbols:
-                stopped_nets["global"].setdefault(net, [])
                 continue
 
             fanout = len(graph.adjacency_list[net])
             if fanout > max_fanout:
-                stopped_nets["high_fanout"][net] = fanout
+                high_fanout[net] = fanout
                 continue
-
-            block_nets.add(net)
 
             for nb in graph.adjacency_list[net]:
                 if nb in visited:
                     continue
 
-                cls = classify_component(graph.nodes[nb])
-                if cls == "boundary":
-                    boundary_components.setdefault(nb, net)
+                if classify_component(graph.nodes[nb]) == "boundary":
                     continue
 
                 if len(block) >= max_size:
@@ -189,70 +184,80 @@ def select_block(graph, seed_refs, max_hops=6, max_size=60, max_fanout=8):
 
     return {
         "success": True,
-        "seeds": seeds,
         "block_components": sorted(block),
-        "block_size": len(block),
-        "block_nets": sorted(block_nets),
-        "boundary_components": [
-            {"component": ref, "via_net": net}
-            for ref, net in sorted(boundary_components.items())
-        ],
         "ports": boundary["ports"],
         "dangling": boundary["dangling"],
-        "internal_nets": boundary["internal_nets"],
         "global_nets_touched": boundary["global_nets_touched"],
-        "stopped_nets": {
-            "global": sorted(stopped_nets["global"]),
-            "high_fanout": [
-                {"net": n, "fanout": f}
-                for n, f in sorted(stopped_nets["high_fanout"].items())
-            ],
-        },
+        "high_fanout": [{"net": n, "fanout": f} for n, f in sorted(high_fanout.items())],
         "truncated": truncated,
         "truncation_reason": truncation_reason,
-        "limits": {"max_hops": max_hops, "max_size": max_size,
-                   "max_fanout": max_fanout},
     }
 
 
-def suggest_replacement(port: dict) -> dict:
-    """Suggest a replacement element for one block port from its outside pin types.
+def suggest_port_role(port: dict) -> dict:
+    """Suggest the UI role of one block port from its outside pin types.
 
-    Only 'output' -> 'source, only 'input' -> 'open' anything else -> 'clarify'.
+    Any driver outside (output / power_out) -> 'input' (a source replaces it), only sinks
+    outside (input / power_in) -> 'output' (left open). Anything else (passive,
+    bidirectional, ...) is ambiguous -> 'output' with clarify=True, the user must check.
+
+    Returns:
+        dict with role ('input' | 'output') and clarify (bool).
     """
-
-    outside_types = sorted({
+    outside_types = {
         (p.get("electrical_type") or "unspecified").split("+")[0]
         for p in port.get("pins_outside", [])
-    })
-
-    if outside_types == ["output"]:
-        suggestion = "source"
-        reason = "outside drives this net (output) -> replace with a source"
-    elif outside_types == ["input"]:
-        suggestion = "open"
-        reason = "outside only reads this net (input) -> leave open"
-    else:
-        suggestion = "clarify"
-        reason = f"ambiguous outside pin types {outside_types} -> please confirm"
-
-    return {
-        "net": port["net"],
-        "suggestion": suggestion,
-        "reason": reason,
-        "outside_types": outside_types,
     }
 
+    if outside_types & {"output", "power_out"}:     
+        return {"role": "input", "clarify": False}
+    if outside_types <= {"input", "power_in"}:      
+        return {"role": "output", "clarify": False}
+    return {"role": "output", "clarify": True}
 
-def suggest_replacements(ports: list) -> list:
-    """Run suggest_replacement over all ports of a block."""
-    return [suggest_replacement(p) for p in ports]
+
+def reference_net(rails):
+    """Return the ground net among the touched rails, or None if there is none."""
+    return next((n for n in rails if "GND" in n.upper()), None)
+
+
+def block_warnings(block):
+    """Pre-checks on a grown block
+    
+    Returns:
+        list of messages: block truncated, nets not followed (high fan-out), open pins,
+        rails without a recognisable voltage.
+    """
+    warnings = []
+    if block.get("truncated"):
+        warnings.append(
+            f"Block wurde abgeschnitten ({block['truncation_reason']}) - "
+            "die Schnittstellen erscheinen als Ports."
+        )
+    for n in block.get("high_fanout", []):
+        warnings.append(
+            f"Netz {n['net']} ({n['fanout']} Anschluesse) nicht weiterverfolgt - "
+            "vermutlich Bus oder Sammelnetz."
+        )
+    for d in block.get("dangling", []):
+        warnings.append(
+            f"Offener Pin: {d['pin']['component']} Pin {d['pin']['pin']} an Netz {d['net']}."
+        )
+    rails = block["global_nets_touched"]
+    reference = reference_net(rails)
+    unknown = [r for r in rails if r != reference and guess_voltage(r) is None]
+    if unknown:
+        warnings.append(
+            f"Keine Spannung erkennbar fuer {', '.join(unknown)} - "
+            "diese Netze bekommen keine Quelle."
+        )
+    return warnings
 
 
 def guess_voltage(net_name: str):
-    """Guess a supply voltage from a power-net name.
+    """Guess a supply voltage from a power-net name: '+5V', '+3.3V', '3V3', '-12V'.
     """
-    m = re.match(r"^([+-]?)(\d+)[Vv](\d*)", net_name)
+    m = re.match(r"^([+-]?)(\d+(?:\.\d+)?)[Vv](\d*)", net_name)
     if not m:
         return None
     sign = -1.0 if m.group(1) == "-" else 1.0

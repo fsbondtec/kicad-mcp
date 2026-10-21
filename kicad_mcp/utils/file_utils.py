@@ -2,6 +2,7 @@
 File handling utilities for KiCad MCP Server.
 """
 
+import hashlib
 import json
 import os
 from typing import Any
@@ -9,6 +10,11 @@ from typing import Any
 from kicad_mcp.utils.kicad_utils import get_project_name_from_path
 from kiutils.schematic import Schematic
 
+
+def hash_file(path: str) -> str:
+    """Return the SHA-256 hex digest of a file's contents (used to invalidate caches)."""
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
 
 
 def resolve_project_file(project_path: str) -> str:
