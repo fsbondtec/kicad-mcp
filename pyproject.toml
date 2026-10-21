@@ -56,7 +56,8 @@ dependencies = [
     "sentence-transformers>=5.4.1",
     "einops>=0.8.2",
     "faiss-cpu>=1.7.0",
-    "Pillow>=10.0.0"
+    "Pillow>=10.0.0",
+    "PySpice>=1.5"  # ngspice simulation of isolated blocks
 ]
 
 
