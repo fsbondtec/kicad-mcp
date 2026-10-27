@@ -101,19 +101,11 @@ class NetlistParser:
                 part = sexp_value(sexp_child(libsource, "part")) if libsource else None
                 desc = sexp_value(sexp_child(libsource, "description")) if libsource else None
 
-                # collect simulation fields (properties named "Sim.*"), e.g. Sim.Device
-                sim_fields = {} 
-                for prop in sexp_children(comp, "property"):
-                    prop_name = sexp_value(sexp_child(prop, "name"))
-                    if prop_name and prop_name.startswith("Sim."):
-                        sim_fields[prop_name] = sexp_value(sexp_child(prop, "value"))
-
                 self.components[ref] = {
                     "lib_id": f"{lib}:{part}" if lib and part else None,
                     "value": value,
                     "description": desc,
                     "name": part,
-                    "sim_fields": sim_fields,
                 }
 
         nets_node = sexp_child(tree, "nets")

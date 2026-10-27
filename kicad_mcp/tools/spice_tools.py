@@ -11,8 +11,6 @@ Roles:
   - load   -> the outside presents an impedance -> value = a passive (R/C/L)
 """
 
-import threading
-
 from fastmcp import FastMCP, FastMCPApp
 from prefab_ui import PrefabApp
 from prefab_ui.components import (
@@ -26,18 +24,37 @@ app = FastMCPApp("SpiceSimulation")
 
 
 
+def _grow_block(project_path, schematic_path, seed_components):
+    """Export the SPICE netlist and grow the block from the seeds over the parts KiCad
+    exported with a value or simulation model.
+
+    Returns: graph, sp, block
+    """
+    from kicad_mcp.tools.graph_tools import get_data
+    from kicad_mcp.utils.block_analysis import select_block
+    from kicad_mcp.utils.spice_deck import SpiceNetlistParser
+
+    seeds = [s.strip() for s in (seed_components or "").split(",") if s.strip()]
+    graph, _ = get_data(project_path, schematic_path)
+    sp = SpiceNetlistParser(schematic_path)
+    sp.export_spice()
+    if not sp.spice:
+        return graph, sp, {"success": False,
+                           "error": sp.export_error or "SPICE-Export fehlgeschlagen"}
+    sp.parse()
+    components = [r for r, n in graph.nodes.items() if n.get("type") == "component"]
+    return graph, sp, select_block(graph, seeds, sp.simulatable_refs(components))
+
+
 def _select_ports(project_path, schematic_path, seed_components):
     """Grow the block from the seeds and pre-fill its ports for the UI.
 
     Returns (block, ports): ports carry the suggested role, default value, clarify flag
     and readable outside pins.
     """
-    from kicad_mcp.tools.graph_tools import get_data
-    from kicad_mcp.utils.block_analysis import select_block, suggest_port_role
+    from kicad_mcp.utils.block_analysis import suggest_port_role
 
-    seeds = [s.strip() for s in (seed_components or "").split(",") if s.strip()]
-    graph, _ = get_data(project_path, schematic_path)
-    block = select_block(graph, seeds)
+    _, _, block = _grow_block(project_path, schematic_path, seed_components)
     if not block.get("success"):
         return block, []
 
@@ -59,25 +76,23 @@ def _select_ports(project_path, schematic_path, seed_components):
 
 
 def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
-                   ports: list, analysis: str = ".op", reference_net: str = ""):
-    """Rebuild the block and assemble the isolated SPICE deck from the ports.
+                   ports: list, analysis: str = ".op", reference_net: str = "",
+                   supplies: list = None):
+    """Rebuild the block and assemble the isolated SPICE deck from the ports and supplies.
+
+    supplies: [{net, value}] from the UI; None (direct call) -> DC guessed from the net name.
 
     Returns (deck, error, warnings): deck is the SPICE text, or None with an error
     message; warnings are block pre-checks and refs missing from the export.
     """
-    from kicad_mcp.tools.graph_tools import get_data
-    from kicad_mcp.utils.block_analysis import block_warnings, guess_voltage, select_block
+    from kicad_mcp.utils.block_analysis import block_warnings, guess_voltage
     from kicad_mcp.utils.block_analysis import reference_net as find_reference_net
-    from kicad_mcp.utils.spice_deck import (
-        SpiceNetlistParser, build_isolated_deck, build_net_node_map,
-    )
+    from kicad_mcp.utils.spice_deck import build_isolated_deck, build_net_node_map
 
     # the ports come from the UI, only the block itself is rebuilt
-    seeds = [s.strip() for s in (seed_components or "").split(",") if s.strip()]
-    graph, _ = get_data(project_path, schematic_path)
-    block = select_block(graph, seeds)
+    graph, sp, block = _grow_block(project_path, schematic_path, seed_components)
     if not block.get("success"):
-        return None, f"Fehler: ungueltige Seeds {block.get('missing', seed_components)}", []
+        return None, f"Fehler: {block['error']}", []
 
     rails = block["global_nets_touched"]
     reference_net = reference_net or find_reference_net(rails)
@@ -86,20 +101,18 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
             "Fehler: kein Massenetz (GND) im Block - bitte in der UI ein Bezugsnetz waehlen."
         ), []
     
-    voltages = {r: guess_voltage(r) for r in rails if r != reference_net}
-    supplies = {r: v for r, v in voltages.items() if v is not None}
+    if supplies is None:
+        supplies = [{"net": r, "value": f"DC {guess_voltage(r):g}"} for r in rails
+                    if guess_voltage(r) is not None]
+    supply_nodes = {s["net"]: s["value"] for s in supplies
+                    if (s.get("value") or "").strip() and s["net"] != reference_net}
 
-    sp = SpiceNetlistParser(schematic_path)
-    sp.export_spice()
-    if not sp.spice:
-        return None, f"Fehler: {sp.export_error or 'SPICE-Export fehlgeschlagen'}", []
-    sp.parse()
     filtered = sp.filter_block(block["block_components"])
     if not filtered["elements"]:
         return None, (
             "Fehler: keine simulierbaren Bauteile im Block gefunden. "
             f"Fehlende/nicht exportierte Refs: {', '.join(filtered['missing_refs']) or 'alle'}. "
-            "Seeds muessen simulierbare Bauteile (R/C/L/Dioden/Subckt) sein."
+            "Seeds muessen Bauteile mit Wert oder Simulationsmodell sein."
         ), []
 
     warnings = block_warnings(block)
@@ -112,7 +125,7 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
     deck = build_isolated_deck(
         kept_elements=filtered["elements"],
         reference_node=reference_net,
-        supply_nodes=supplies,
+        supply_nodes=supply_nodes,
         ports=[(net_map.get(p.get("net"), p.get("net")), p.get("role"), p.get("value"))
                for p in ports or []],
         analysis=analysis or ".op",
@@ -125,8 +138,12 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
 
 @app.tool()
 def run_simulation(project_path: str, schematic_path: str, seed_components: str,
-                   ports: list, analysis: str = ".op", reference_net: str = "") -> dict:
+                   ports: list, analysis: str = ".op", reference_net: str = "",
+                   supplies: list = None) -> dict:
     """Backend: assemble the isolated block deck and run it through ngspice.
+
+    supplies: [{net, value}] source spec per supply rail, e.g. 'DC 5 AC 1'; omitted ->
+    DC voltage guessed from the net name.
 
     run_deck validates the deck first; a deck that fails is not run and the report says
     what to fix. Otherwise reports the node voltages, or the errors ngspice raised.
@@ -137,7 +154,8 @@ def run_simulation(project_path: str, schematic_path: str, seed_components: str,
     from kicad_mcp.utils.spice_runner import run_deck, format_result
 
     deck, error, warnings = _assemble_deck(
-        project_path, schematic_path, seed_components, ports, analysis, reference_net
+        project_path, schematic_path, seed_components, ports, analysis, reference_net,
+        supplies,
     )
     if error:
         return {"report": error, "svg": ""}
@@ -154,30 +172,23 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
 
     Grows the block from the seeds, detects the open ports and
     lets the user assign each one a role (source/load/open output) and value. The
-    button feeds those ports to run_simulation, which assembles, validates
-    and runs the isolated deck and shows the result together with the deck.
-
-    A block without open ports has nothing to configure: it is simulated (.op) right
-    away, unless a reference net still has to be chosen.
+    button feeds those ports, the supply sources and the analysis to run_simulation,
+    which assembles, validates and runs the isolated deck and shows the result
+    together with the deck.
     """
-    from kicad_mcp.utils.block_analysis import block_warnings, reference_net
-    from kicad_mcp.utils.spice_deck import SpiceNetlistParser
+    from kicad_mcp.utils.block_analysis import block_warnings, guess_voltage, reference_net
 
     block, ports = _select_ports(project_path, schematic_path, seed_components)
-    if block.get("success"):
-        # start the slow SPICE export in the background while the user sets the ports,
-        threading.Thread(
-            target=SpiceNetlistParser(schematic_path).export_spice, daemon=True
-        ).start()
 
     rails = block.get("global_nets_touched", [])
     needs_reference = bool(rails) and reference_net(rails) is None
-    auto_run = block.get("success") and not ports and not needs_reference
+    # with a reference still to choose all rails are listed, the chosen one is skipped later
+    supply_rails = [r for r in rails if r != reference_net(rails)]
 
     with Column(gap=4) as view:
-        H3("Simulation" if auto_run else "Ports des Blocks festlegen")
+        H3("Simulation des Blocks festlegen")
         if not block.get("success"):
-            Muted(f"Keine gueltigen Seeds: {block.get('missing', seed_components)}")
+            Muted(f"Keine gueltigen Seeds: {block['error']}")
             return PrefabApp(state={}, view=view)
 
         for warning in block_warnings(block):
@@ -188,10 +199,6 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
                 f"Block {', '.join(block['block_components'])} hat keine offenen Ports - "
                 "er wird nur aus den Versorgungsnetzen gespeist."
             )
-            if auto_run:
-                Label("Simulationsergebnis")
-                Code(run_simulation(project_path, schematic_path, seed_components, [])["report"])
-                return PrefabApp(state={}, view=view)
         else:
             Muted(
                 "Jeder Port ist ein Netz, das den Block verlaesst. Lege je Port fest, "
@@ -213,6 +220,17 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
                     for rail in rails:
                         Radio(option=rail, label=rail)
                 Muted("Kein GND-Netz im Block - waehle das Netz, das als Knoten 0 gilt.")
+
+        args_supplies = []
+        if supply_rails:
+            Label("Versorgung (Quelle je Netz gegen Masse, leer = keine Quelle)")
+        for i, rail in enumerate(supply_rails):
+            voltage = guess_voltage(rail)
+            state[f"supply_{i}"] = f"DC {voltage:g}" if voltage is not None else ""
+            with Row(gap=6, align="center"):
+                Text(rail)
+                Input(name=f"supply_{i}", placeholder="z. B. DC 5, DC 5 AC 1, PULSE(0 5 0 1m)")
+            args_supplies.append({"net": rail, "value": getattr(STATE, f"supply_{i}")})
 
         with Column(gap=1):
             Label("Analyse")
@@ -260,6 +278,7 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
             "ports": args_ports,
             "analysis": getattr(STATE, "analysis"),
             "reference_net": getattr(STATE, "reference_net"),
+            "supplies": args_supplies,
         }
 
         Button(

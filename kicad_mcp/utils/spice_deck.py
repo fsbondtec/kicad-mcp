@@ -135,10 +135,34 @@ class SpiceNetlistParser:
                 tokens = line.split()
                 self.elements.append({"name": tokens[0], "tokens": tokens, "raw": line})
 
+    def simulatable_refs(self, known_refs):
+        """Refs KiCad exported as a complete element: nodes plus a value or a model
+        that is defined in the deck (or may come from an .include).
+
+        A part without simulation model is exported as a bare 'Q1 __Q1' and is skipped.
+
+        Args:
+            known_refs: all component references of the schematic.
+
+        Returns:
+            set of upper-case references.
+        """
+        refs = {r.upper() for r in known_refs}
+        result = set()
+        for e in self.elements:
+            ref = element_ref(e["name"], refs)
+            n = node_count(e["tokens"])
+            if not ref or n < 1 or len(e["tokens"]) < n + 2:
+                continue
+            model = [t for t in e["tokens"][1:] if "=" not in t][-1]
+            if e["name"][:1].upper() in _VALUE_DEVICES or model in self.models or self.includes:
+                result.add(ref)
+        return result
+
     def filter_block(self, block_components):
         """
         Keeps only the element lines belonging to the block and the model cards they
-        reference.
+        reference. 
 
         Args:
             block_components: component references forming the block.
@@ -148,15 +172,8 @@ class SpiceNetlistParser:
         """
         wanted = {r.upper() for r in block_components}
 
-        def ref_of(name):
-            if name.upper() in wanted:
-                return name.upper()
-            if name[:1].upper() == "X" and name[1:].upper() in wanted:
-                return name[1:].upper()
-            return None
-
-        kept_elements = [e for e in self.elements if ref_of(e["name"])]
-        found_refs = {ref_of(e["name"]) for e in kept_elements}
+        kept_elements = [e for e in self.elements if element_ref(e["name"], wanted)]
+        found_refs = {element_ref(e["name"], wanted) for e in kept_elements}
         missing = sorted(wanted - found_refs)
 
         used_models = {
@@ -164,32 +181,49 @@ class SpiceNetlistParser:
         }
         kept_models = [self.models[n] for n in sorted(used_models)]
 
-        has_subckt_instance = any(e["name"][:1].upper() == "X" for e in kept_elements)
-        kept_includes = list(self.includes) if has_subckt_instance else []
 
         return {
             "elements": [e["raw"] for e in kept_elements],
             "models": kept_models,
-            "includes": kept_includes,
+            "includes": list(self.includes),
             "missing_refs": missing,
         }
 
 
-# device letters whose element has exactly two nodes in one Spice Line 
-_TWO_NODE = set("RCLDVI")
+_VALUE_DEVICES = set("RCLVIB")
+
+
+def element_ref(name, refs):
+    """Reference of an element line, KiCad prefixes the device letter if the
+    reference does not start with it ('MQ2', 'XU1')."""
+    if name.upper() in refs:
+        return name.upper()
+    if name[1:].upper() in refs:
+        return name[1:].upper()
+    return None
+
+
+def node_count(tokens):
+    """Number of nodes of an element line: two for R/C/L/V/I/B, otherwise all
+    tokens before the model name."""
+
+    if tokens[0][:1].upper() in _VALUE_DEVICES:
+        return 2
+    return len([t for t in tokens[1:] if "=" not in t]) - 1
 
 
 def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, analysis,
                         models=None, includes=None, title=".title isolated block"):
     """Assemble a runnable SPICE deck for an isolated block.
 
-    Maps the reference net to node 0, turns each global rail into an independent DC
+    Maps the reference net to node 0, turns each global rail into an independent
     source against ground, each port into a source / load / nothing, and appends the analysis directive.
 
     Args:
         kept_elements: raw block element lines 
         reference_node: SPICE node tied to 0 (the reference net / node 0).
-        supply_nodes: {node: voltage} each becomes an independent DC source to 0.
+        supply_nodes: {node: source spec} each becomes an independent source to 0,
+            e.g. {'+5V': 'DC 5 AC 1'}.
         ports: [(node, role, value)] from the user's per-port config,
             role 'input' | 'load' | 'output'.
         analysis: analysis directive, e.g. '.op' or '.ac dec 20 1 1Meg'.
@@ -205,10 +239,10 @@ def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, anal
     lines.extend(includes or [])
     lines.extend(models or [])
 
-    for i, (node, voltage) in enumerate(sorted(supply_nodes.items()), start=1):
+    for i, (node, spec) in enumerate(sorted(supply_nodes.items()), start=1):
         if node == reference_node:
             continue
-        lines.append(f"V{i}_supply {node} 0 DC {voltage}")
+        lines.append(f"V{i}_supply {node} 0 {spec}")
 
     # input -> source 'Vin<i>', load -> passive 'R/C/Lload<i>' (R if no type given), output -> open
     for i, (node, role, value) in enumerate(ports or []):
@@ -222,15 +256,13 @@ def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, anal
             else:
                 lines.append(f"Rload{i} {node} 0 {value}")
 
-    # block elements: reference node -> 0 on two-node devices, KiCad value annotations
-    # stripped from passives ('4.7u/50V/X7R' -> '4.7u'); other devices are kept as-is
+
     for raw in kept_elements:
         tokens = raw.split()
-        letter = tokens[0][:1].upper()
-        if letter in _TWO_NODE:
-            tokens[1:3] = ["0" if t == reference_node else t for t in tokens[1:3]]
-            if letter in ("R", "C", "L") and len(tokens) >= 4:
-                tokens[3] = tokens[3].split("/")[0].strip()
+        n = node_count(tokens)
+        tokens[1:1 + n] = ["0" if t == reference_node else t for t in tokens[1:1 + n]]
+        if tokens[0][:1].upper() in ("R", "C", "L") and len(tokens) >= 4:
+            tokens[3] = tokens[3].split("/")[0].strip()
         lines.append(" ".join(tokens))
 
     lines.append(analysis)
@@ -306,13 +338,7 @@ def validate_deck(deck: str) -> dict:
 
     for tokens in elements:
         letter = tokens[0][:1].upper()
-        if letter in _TWO_NODE:
-            nodes = tokens[1:3]
-        elif letter == "X":    
-            nodes = [t for t in tokens[1:] if "=" not in t][:-1]
-        else:
-            nodes = []
-        roots = [find(n) for n in nodes]
+        roots = [find(n) for n in tokens[1:1 + node_count(tokens)]]
         if letter in ("C", "I"):
             continue
         for r in roots[1:]:
@@ -327,7 +353,8 @@ def validate_deck(deck: str) -> dict:
 
     source_lines = [" ".join(t) for t in sources]
     if analysis == ".ac" and not any(re.search(r"\bAC\b", l, re.I) for l in source_lines):
-        errors.append(".ac braucht eine AC-Quelle - einen input-Port z. B. auf 'AC 1' setzen.")
+        errors.append(".ac braucht eine AC-Quelle - z. B. 'DC 5 AC 1' bei einem input-Port "
+                      "oder einer Versorgung.")
     if analysis == ".tran" and not any(
             re.search(r"\b(SIN|PULSE|PWL|EXP)\s*\(", l, re.I) for l in source_lines):
         warnings.append(".tran nur mit DC-Quellen - Ergebnis ist ein konstanter Verlauf.")

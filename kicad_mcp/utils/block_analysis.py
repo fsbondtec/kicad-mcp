@@ -4,13 +4,6 @@ Component and block classification for extracting simulatable sub-circuits.
 import re
 from collections import deque
 
-# Primitive devices reducible to a SPICE element, incl. common variants
-# (C_Polarized, R_Small, D_Schottky, ...).
-_SIMULATABLE_NAME_RE = re.compile(r"^(R|C|L|D)(_.*)?$")
-
-# Sim.Device values that denote a SPICE primitive
-_PRIMITIVE_SIM_DEVICES = {"R", "C", "L", "D"}
-
 # lib_id / name fragments for electrically transparent parts the traversal may
 # pass straight through: test points, mounting holes and net ties.
 _PERMEABLE_RE = re.compile(r"testpoint|mountinghole|nettie", re.I)
@@ -20,31 +13,16 @@ DEFAULT_MAX_HOPS = 6
 DEFAULT_MAX_SIZE = 60
 DEFAULT_MAX_FANOUT = 10
 
-def classify_component(node: dict) -> str:
-    """Classify a component node as 'simulatable', 'permeable' or 'boundary'.
 
-    - permeable:   electrically transparent, block traversal passes through them.
-    - simulatable: a primitive passive or diode (R/C/L/D and variants)
-    - boundary:    everything else (ICs, resistor arrays, varistors, ...).
+def is_permeable(node: dict) -> bool:
+    """Electrically transparent part (test point, mounting hole, net tie), the block
+    traversal passes through it.
 
     Args:
         node: a component entry from CircuitGraph.nodes (type == 'component').
     """
-    lib_id = node.get("lib_id") or ""
-    name = node.get("name") or ""
-    sim_fields = node.get("sim_fields") or {}
-
-    if _PERMEABLE_RE.search(lib_id) or _PERMEABLE_RE.search(name):
-        return "permeable"
-
-    if _SIMULATABLE_NAME_RE.match(name):
-        return "simulatable"
-
-    sim_device = (sim_fields.get("Sim.Device") or "").upper()
-    if sim_device in _PRIMITIVE_SIM_DEVICES:
-        return "simulatable"
-
-    return "boundary"
+    return bool(_PERMEABLE_RE.search(node.get("lib_id") or "")
+                or _PERMEABLE_RE.search(node.get("name") or ""))
 
 
 def _pin_record(conn: dict) -> dict:
@@ -107,19 +85,20 @@ def classify_block_boundary(graph, block_components):
     }
 
 
-def select_block(graph, seed_refs, max_hops=DEFAULT_MAX_HOPS, max_size=DEFAULT_MAX_SIZE,
-                 max_fanout=DEFAULT_MAX_FANOUT):
+def select_block(graph, seed_refs, simulatable, max_hops=DEFAULT_MAX_HOPS,
+                 max_size=DEFAULT_MAX_SIZE, max_fanout=DEFAULT_MAX_FANOUT):
     """Grow a simulatable sub-circuit outward from one or more seed components.
 
     BFS over the bipartite component/net graph. It expands through simulatable and
     permeable components and the signal nets between them, and stops at:
       - global nets (power / ground, i.e. graph.power_symbols),
-      - boundary components (classify_component == 'boundary'),
+      - components that are neither simulatable nor permeable (ICs without model, ...),
       - nets with a fan-out above max_fanout (likely a bus / shared rail).
 
     Args:
         graph: a built CircuitGraph instance.
         seed_refs: component reference(s) to start from.
+        simulatable: refs with a complete SPICE element (SpiceNetlistParser.simulatable_refs).
         max_hops: max BFS hops (in components) from any seed before truncating.
         max_size: max number of components in the block before truncating.
         max_fanout: a net with more than this many connections is a stop.
@@ -136,8 +115,14 @@ def select_block(graph, seed_refs, max_hops=DEFAULT_MAX_HOPS, max_size=DEFAULT_M
     missing = [r for r in seeds if r not in graph.adjacency_list
                or graph.nodes.get(r, {}).get("type") != "component"]
     if missing:
-        return {"success": False, "error": "Please enter valid components",
-                "missing": missing}
+        return {"success": False,
+                "error": f"Unbekannte Bauteile: {', '.join(missing)}"}
+
+    no_model = [r for r in seeds if r not in simulatable and not is_permeable(graph.nodes[r])]
+    if no_model:
+        return {"success": False,
+                "error": f"Kein Simulationsmodell: {', '.join(no_model)} - in KiCad unter "
+                         "Symboleigenschaften -> Simulationsmodell zuweisen."}
 
     block = set(seeds)
     high_fanout = {}
@@ -168,7 +153,7 @@ def select_block(graph, seed_refs, max_hops=DEFAULT_MAX_HOPS, max_size=DEFAULT_M
                 if nb in visited:
                     continue
 
-                if classify_component(graph.nodes[nb]) == "boundary":
+                if nb not in simulatable and not is_permeable(graph.nodes[nb]):
                     continue
 
                 if len(block) >= max_size:
@@ -249,7 +234,7 @@ def block_warnings(block):
     if unknown:
         warnings.append(
             f"Keine Spannung erkennbar fuer {', '.join(unknown)} - "
-            "diese Netze bekommen keine Quelle."
+            "ohne Eintrag in der UI bekommen diese Netze keine Quelle."
         )
     return warnings
 
