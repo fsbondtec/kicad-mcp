@@ -16,9 +16,10 @@ import threading
 from fastmcp import FastMCP, FastMCPApp
 from prefab_ui import PrefabApp
 from prefab_ui.components import (
-    Column, Row, Input, Button, RadioGroup, Radio, Text, Code, H3, Muted, Label, If, Badge,
+    Column, Row, Input, Button, RadioGroup, Radio, Text, Code, H3, Muted, Label, If, Badge, Svg,
     STATE, RESULT,
 )
+from prefab_ui.actions.mcp import UpdateContext
 from fastmcp.apps.form import CallTool, SetState
 
 app = FastMCPApp("SpiceSimulation")
@@ -71,7 +72,7 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
         SpiceNetlistParser, build_isolated_deck, build_net_node_map,
     )
 
-    # the ports come from the UI; only the block itself is rebuilt (graph is cached)
+    # the ports come from the UI, only the block itself is rebuilt
     seeds = [s.strip() for s in (seed_components or "").split(",") if s.strip()]
     graph, _ = get_data(project_path, schematic_path)
     block = select_block(graph, seeds)
@@ -124,11 +125,14 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
 
 @app.tool()
 def run_simulation(project_path: str, schematic_path: str, seed_components: str,
-                   ports: list, analysis: str = ".op", reference_net: str = "") -> str:
+                   ports: list, analysis: str = ".op", reference_net: str = "") -> dict:
     """Backend: assemble the isolated block deck and run it through ngspice.
 
     run_deck validates the deck first; a deck that fails is not run and the report says
     what to fix. Otherwise reports the node voltages, or the errors ngspice raised.
+
+    Returns:
+        {"report": text incl. the deck, "svg": ngspice diagram for .ac / .tran or ""}.
     """
     from kicad_mcp.utils.spice_runner import run_deck, format_result
 
@@ -136,11 +140,12 @@ def run_simulation(project_path: str, schematic_path: str, seed_components: str,
         project_path, schematic_path, seed_components, ports, analysis, reference_net
     )
     if error:
-        return error
+        return {"report": error, "svg": ""}
 
     result = run_deck(deck)
     result["warnings"] = warnings + result["warnings"]
-    return format_result(result) + "\n\n--- Deck ---\n" + deck
+    return {"report": format_result(result) + "\n\n--- Deck ---\n" + deck,
+            "svg": result["svg"] or ""}
 
 
 @app.ui()
@@ -185,7 +190,7 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
             )
             if auto_run:
                 Label("Simulationsergebnis")
-                Code(run_simulation(project_path, schematic_path, seed_components, []))
+                Code(run_simulation(project_path, schematic_path, seed_components, [])["report"])
                 return PrefabApp(state={}, view=view)
         else:
             Muted(
@@ -199,7 +204,7 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
                     f"output) - bitte pruefen: {', '.join(unclear)}"
                 )
 
-        state = {"sim_result": "", "analysis": ".op", "reference_net": ""}
+        state = {"sim_result": "", "sim_svg": "", "analysis": ".op", "reference_net": ""}
 
         if needs_reference:
             with Column(gap=1):
@@ -262,12 +267,17 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
             onClick=CallTool(
                 "run_simulation",
                 arguments=call_args,
-                onSuccess=SetState("sim_result", RESULT),
+                onSuccess=[
+                    SetState("sim_result", RESULT.report),
+                    SetState("sim_svg", RESULT.svg),
+                    UpdateContext(content=RESULT.report),
+                ],
                 onError=SetState("sim_result", "Fehler beim Aufruf von run_simulation."),
             ),
         )
 
         Label("Simulationsergebnis")
+        Svg(getattr(STATE, "sim_svg"), width="100%")
         Code(getattr(STATE, "sim_result"))
 
     return PrefabApp(state=state, view=view)

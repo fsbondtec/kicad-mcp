@@ -251,14 +251,31 @@ def validate_deck(deck: str) -> dict:
     lines = deck.splitlines()
     elements = [l.split() for l in lines if l[:1].isalpha()]    
     sources = [t for t in elements if t[0][:1].upper() in ("V", "I")]
-    analysis = next((l.split()[0].lower() for l in lines
-                     if l.lower().startswith((".op", ".ac", ".tran", ".dc"))), ".op")
 
     if not sources:
         errors.append("Keine Quelle im Deck - mindestens einen Port als input festlegen.")
 
-    # SPICE number with optional exponent and unit suffix: 309k, 1Meg, 4.7u, 1e-9
     value_re = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?[a-z]*$", re.I)
+
+    directives = [l.split() for l in lines if l.startswith(".") and l.split()[0].lower()
+                  not in (".title", ".include", ".lib", ".model", ".subckt", ".ends", ".end")]
+    
+    analysis = directives[0][0].lower() if directives else None
+    params = directives[0][1:] if directives else []
+
+    if analysis is None:
+        errors.append("Keine Analyse im Deck - .op, .ac oder .tran angeben.")
+    elif analysis not in (".op", ".ac", ".tran"):
+        errors.append(f"Analyse '{analysis}' nicht unterstuetzt, .op, .ac oder .tran verwenden.")
+    elif analysis == ".ac" and not (
+            len(params) >= 4 and params[0].lower() in ("dec", "oct", "lin")
+            and all(value_re.match(p) for p in params[1:4])):
+        errors.append(".ac braucht 'dec|oct|lin <Punkte> <fStart> <fStop>', "
+                      "z. B. '.ac dec 20 1 1Meg'.")
+    elif analysis == ".tran" and not (
+            len(params) >= 2 and all(value_re.match(p) for p in params[:2])):
+        errors.append(".tran braucht '<Schritt> <Ende>', z. B. '.tran 1u 5m'.")
+
     for tokens in elements:
         if tokens[0][:1].upper() in ("R", "C", "L") and (
                 len(tokens) < 4 or not value_re.match(tokens[3])):
