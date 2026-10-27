@@ -12,7 +12,7 @@ from fastmcp.apps import AppConfig
 from kicad_mcp.utils.net_parser import NetlistParser
 from kicad_mcp.utils.graph_analysis import CircuitGraph
 from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files, plot_svg_schematic, plot_svg_pcb, draw_path_to_pcb_svg
-from kicad_mcp.utils.file_utils import get_project_files, find_component_sheets, hash_file
+from kicad_mcp.utils.file_utils import get_project_files, find_component_sheets, hash_schematic
 from kicad_mcp.utils.svg_file_server import IMAGE_VIEW_URI, FILE_SERVER_PORT, start_or_update_file_server
 
 project_cache: Dict[str, Dict[str, Any]] = {}
@@ -41,7 +41,7 @@ def get_data(project_path: str, schematic_path: str) -> tuple[CircuitGraph, Dict
     # Check if cache and file hasn't been modified
     if cache_key in project_cache:
         cached = project_cache[cache_key]
-        current_hash = hash_file(schematic_path)
+        current_hash = hash_schematic(schematic_path)
 
         if cached["hash"] == current_hash:
             return cached["graph"], cached["structured_data"]
@@ -55,7 +55,7 @@ def get_data(project_path: str, schematic_path: str) -> tuple[CircuitGraph, Dict
     graph = CircuitGraph(structured_data, project_path)
 
     if current_hash is None:
-        current_hash = hash_file(schematic_path)
+        current_hash = hash_schematic(schematic_path)
 
     # Cache the results
     project_cache[cache_key] = {

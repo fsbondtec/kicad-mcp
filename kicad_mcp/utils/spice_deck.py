@@ -12,7 +12,7 @@ import threading
 from collections import defaultdict
 
 from kicad_mcp.utils.cli_drc import find_kicad_cli
-from kicad_mcp.utils.file_utils import hash_file
+from kicad_mcp.utils.file_utils import hash_schematic
 
 
 # Cache of kicad-cli SPICE exports
@@ -46,7 +46,7 @@ class SpiceNetlistParser:
 
     def _export_spice_locked(self):
         try:
-            current_hash = hash_file(self.schematic_path)
+            current_hash = hash_schematic(self.schematic_path)
         except OSError as e:
             self.export_error = f"Schaltplan nicht lesbar: {e}"
             return

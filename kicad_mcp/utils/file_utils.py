@@ -2,6 +2,7 @@
 File handling utilities for KiCad MCP Server.
 """
 
+import glob
 import hashlib
 import json
 import os
@@ -11,10 +12,18 @@ from kicad_mcp.utils.kicad_utils import get_project_name_from_path
 from kiutils.schematic import Schematic
 
 
-def hash_file(path: str) -> str:
-    """Return the SHA-256 hex digest of a file's contents (used to invalidate caches)."""
-    with open(path, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
+def hash_schematic(schematic_path: str) -> str:
+    """SHA-256 over all .kicad_sch files next to (and below) the root schematic.
+
+    Used to invalidate caches. A hierarchical design keeps its sub-sheets in extra files,
+    so hashing only the root file would miss edits on a sub-sheet.
+    """
+    h = hashlib.sha256()
+    root = os.path.dirname(os.path.abspath(schematic_path))
+    for path in sorted(glob.glob(os.path.join(root, "**", "*.kicad_sch"), recursive=True)):
+        with open(path, "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()
 
 
 def resolve_project_file(project_path: str) -> str:
