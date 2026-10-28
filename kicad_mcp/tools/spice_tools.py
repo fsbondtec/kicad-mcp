@@ -25,6 +25,9 @@ from fastmcp.apps.form import CallTool, SetState
 
 app = FastMCPApp("SpiceSimulation")
 
+# the whole UI goes out as one tool result, the client rejects results above 1 MB
+MAX_IMAGE_BYTES = 600_000
+
 
 
 def _grow_block(project_path, schematic_path, seed_components):
@@ -75,7 +78,46 @@ def _select_ports(project_path, schematic_path, seed_components):
                 for p in port["pins_outside"]
             ],
         })
-    return block, ports
+    return graph, block, ports
+
+
+def _block_images(project_path, graph, block, ports):
+    """Schematic excerpts of the block, one per sheet with block components
+
+    Returns: list of SVG markup strings.
+    """
+    from collections import defaultdict
+    from kicad_mcp.utils.file_utils import get_project_files, resolve_project_file
+    from kicad_mcp.utils.svg_utils import (
+        build_svg_map_from_project_files, plot_svg_schematic, render_block_sheet,
+    )
+
+    project_file = resolve_project_file(project_path)
+    plot_svg_schematic(project_file)
+    svg_map = build_svg_map_from_project_files(get_project_files(project_file))
+
+    wires = graph.wire_graph
+    sheets = defaultdict(lambda: {"parts": [], "wires": [], "markers": []})
+
+    for ref in block["block_components"]:
+        pins = wires.component_pins.get(ref)
+        if pins:
+            sheets[wires.component_sheets[ref]]["parts"].append(list(pins.values()))
+
+    for number, port in enumerate(ports, start=1):
+        conns = graph.netlist_data["nets"][port["net"]]
+        for seg in wires.net_segments([(c["component"], c["pin"]) for c in conns]):
+            sheets[seg.sheet]["wires"].append(
+                {"start": graph.format_node(seg.start), "end": graph.format_node(seg.end)})
+
+        inside = [c for c in conns if c["component"] in block["block_components"]]
+        pin = wires.component_pins.get(inside[0]["component"], {}).get(inside[0]["pin"])
+        if pin:
+            sheet = wires.component_sheets[inside[0]["component"]]
+            sheets[sheet]["markers"].append((*pin, str(number)))
+
+    return [render_block_sheet(svg_map[sheet], **parts)
+            for sheet, parts in sheets.items() if parts["parts"] and sheet in svg_map]
 
 
 def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
@@ -232,6 +274,21 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
 
         for warning in block_warnings(block):
             Muted(f"Hinweis: {warning}")
+
+        try:
+            images = _block_images(project_path, graph, block, ports)
+        except Exception as e:
+            print(f"Schaltplanausschnitt fehlgeschlagen: {e}", file=sys.stderr)
+            images = []
+        shown = 0
+        for image in images:
+            if shown + len(image) > MAX_IMAGE_BYTES:
+                Muted("Weitere Schaltplanausschnitte ausgelassen - zu gross fuer die Anzeige.")
+                break
+            Svg(image, width="100%")
+            shown += len(image)
+        if not images:
+            Muted("Schaltplanausschnitt nicht verfuegbar.")
 
         if not ports:
             Muted(

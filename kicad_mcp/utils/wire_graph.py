@@ -69,6 +69,7 @@ class GlobalWireGraph:
         self.segments = []  # all edges(Wire + Bridges)
         self.adjacency = defaultdict(list)  # position -> [edges], node -> Wire Segment
         self.component_pins = {}  # comp_ref -> {pin_num: (x, y)}
+        self.component_sheets = {}  # comp_ref -> schematic file the symbol is placed on
         self.tolerance = tolerance
 
         # sheet_path → {label_name → list of positions on that sheet} 
@@ -147,6 +148,26 @@ class GlobalWireGraph:
                                 queue.append((other_node, path + [hop]))
         
         return None
+
+    def net_segments(self, pins: List[PinNode]) -> List[WireSegment]:
+        """
+        Collects the drawn wires of one net, starting from its pins.
+        """
+        queue = deque(pins)
+        visited = set(pins)
+        found = {}
+
+        while queue:
+            node = queue.popleft()
+            for segment in self.adjacency.get(node, []):
+                if segment.sheet != "virtual":
+                    found[segment.id] = segment
+                next_node = segment.get_other_end(node)
+                if next_node is not None and next_node not in visited:
+                    visited.add(next_node)
+                    queue.append(next_node)
+
+        return list(found.values())
 
     def is_pin_node(self, node: NodeType) -> bool:
         """
@@ -340,6 +361,7 @@ class GlobalWireGraph:
             
             #add pins to wire graph
             self.add_component_pins(comp_ref, pin_positions)
+            self.component_sheets[comp_ref] = sch.filePath
 
     @staticmethod
     def find_lib_symbol(sch: Schematic, entry_name: str):

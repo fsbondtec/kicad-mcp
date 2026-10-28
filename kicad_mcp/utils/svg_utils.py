@@ -3,8 +3,10 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 import sys
+import xml.etree.ElementTree as ET
 
 from kicad_mcp.utils.kicad_cli import *
+from kicad_mcp.utils.cli_drc import find_kicad_cli
 from kiutils.board import Board
 
 
@@ -24,12 +26,11 @@ def plot_svg_schematic(project_path: str):
     """
     Exports the project's schematic to SVG via kicad-cli.
     """
-    try:
-        cli_path = get_kicad_cli_path(required=True)
-    except KiCadCLIError as e:
-        print("Error searching for cli")
+    cli_path = find_kicad_cli()
+    if not cli_path:
+        print("Error searching for cli", file=sys.stderr)
         return
-    
+
     base_path, _ = os.path.splitext(project_path)
     main_sch_path = f"{base_path}.kicad_sch"
 
@@ -50,10 +51,10 @@ def plot_svg_schematic(project_path: str):
 
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print("export successfull")
+        print("export successfull", file=sys.stderr)
     except subprocess.CalledProcessError as e:
-        print("error when plotting")
-        print(e.stderr if e.stderr else e.stdout)
+        print("error when plotting", file=sys.stderr)
+        print(e.stderr if e.stderr else e.stdout, file=sys.stderr)
 
     
 def plot_svg_pcb(project_path: str):
@@ -244,6 +245,118 @@ def inject_into_svg(svg_path: str, new_elements: str, path_id_prefix: str) -> bo
     with open(svg_path, "w", encoding="utf-8") as f:
         f.write(new_content)
     return True
+
+BLOCK_COLOR = "#1F77B4"
+
+SVG_NS = "http://www.w3.org/2000/svg"
+ET.register_namespace("", SVG_NS)
+_NUMBER = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
+
+
+def _element_points(el) -> List[Tuple[float, float]]:
+    """
+    Corner points of a drawing element in sheet coordinates (kicad-cli writes absolute
+    coordinates), empty for elements without geometry.
+    """
+    tag = el.tag.rsplit("}", 1)[-1]
+    a = el.attrib
+    if tag == "path":
+        points = []
+        for cmd, args in re.findall(r"([MLA])([^MLA]*)", a.get("d", ""), re.I):
+            nums = [float(n) for n in _NUMBER.findall(args)]
+            if cmd in "Aa":
+                nums = [n for i in range(0, len(nums), 7) for n in nums[i + 5:i + 7]]
+            points += zip(nums[0::2], nums[1::2])
+        return points
+    if tag in ("text", "rect"):
+        x, y = float(a.get("x", 0)), float(a.get("y", 0))
+        return [(x, y), (x + float(a.get("width", 0)), y + float(a.get("height", 0)))]
+    if tag == "circle":
+        x, y, r = float(a["cx"]), float(a["cy"]), float(a.get("r", 0))
+        return [(x - r, y - r), (x + r, y + r)]
+    return []
+
+
+def _strip_outside(parent, box: Tuple[float, float, float, float]) -> None:
+    """
+    Removes every drawing element lying completely outside box (x0, y0, x1, y1).
+    """
+    x0, y0, x1, y1 = box
+    for el in list(parent):
+        transform = el.get("transform")
+        if transform:
+            nums = [float(n) for n in _NUMBER.findall(transform)]
+            if len(nums) == 3 and not (x0 <= nums[1] <= x1 and y0 <= nums[2] <= y1):
+                parent.remove(el)
+            continue
+        if len(el):
+            _strip_outside(el, box)
+            if not len(el):
+                parent.remove(el)
+            continue
+        points = _element_points(el)
+        if points and (max(x for x, _ in points) < x0 or min(x for x, _ in points) > x1
+                       or max(y for _, y in points) < y0 or min(y for _, y in points) > y1):
+            parent.remove(el)
+
+
+def render_block_sheet(svg_file: str, parts: List[List[Tuple[float, float]]],
+                       wires: List[Dict], markers: List[Tuple[float, float, str]],
+                       margin: float = 12.0) -> str:
+    """
+    Crops a schematic sheet SVG to a block and draws the block on top.
+
+    Args:
+        svg_file: sheet SVG exported by kicad-cli.
+        parts: pin positions of each block component, each drawn as a box.
+        wires: wire segments of the port nets (start/end like CircuitGraph.format_node).
+        markers: (x, y, text) labels, e.g. the port numbers.
+        margin: space around the block in mm.
+
+    Returns:
+        SVG markup cropped to the block, with a white background.
+    """
+    elements = []
+    points = [(x, y) for x, y, _ in markers]
+
+    for pins in parts:
+        xs, ys = [x for x, _ in pins], [y for _, y in pins]
+        x0, y0 = min(xs) - 1.5, min(ys) - 1.5
+        w, h = max(xs) - min(xs) + 3, max(ys) - min(ys) + 3
+        elements.append(f'<rect x="{x0:.2f}" y="{y0:.2f}" width="{w:.2f}" height="{h:.2f}" '
+                        f'fill="{BLOCK_COLOR}" fill-opacity="0.15" stroke="none" />')
+        points += pins
+
+    d = segments_to_svg_path(wires)
+    if d:
+        elements.append(build_path_element(d, {**DEFAULT_STYLE, "stroke_width": 0.6}, "port_nets"))
+
+    font_size = 1.2
+    for x, y, text in markers:
+        elements.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="0.9" fill="{DEFAULT_STYLE["stroke"]}" />')
+        elements.append(f'<text x="{x:.2f}" y="{y + 0.35 * font_size:.2f}" font-size="{font_size}" '
+                        f'font-family="sans-serif" text-anchor="middle" fill="white" '
+                        f'stroke="none">{text}</text>')
+
+    x0 = min(x for x, _ in points) - margin
+    y0 = min(y for _, y in points) - margin
+    w = max(x for x, _ in points) + margin - x0
+    h = max(y for _, y in points) + margin - y0
+
+    with open(svg_file, "r", encoding="utf-8") as f:
+        svg = f.read()
+    root = ET.fromstring(svg[svg.find("<svg"):])
+    _strip_outside(root, (x0, y0, x0 + w, y0 + h))
+
+    root.set("width", "100%")
+    root.attrib.pop("height", None)
+    root.set("style", "max-height: 400px")
+    root.set("viewBox", f"{x0:.2f} {y0:.2f} {w:.2f} {h:.2f}")
+    root.insert(0, ET.Element(f"{{{SVG_NS}}}rect", x=f"{x0:.2f}", y=f"{y0:.2f}",
+                              width=f"{w:.2f}", height=f"{h:.2f}", fill="white"))
+    root.append(ET.fromstring(f'<g xmlns="{SVG_NS}">{"".join(elements)}</g>'))
+    return ET.tostring(root, encoding="unicode")
+
 
 def draw_path_to_svg(
     wire_segments:  List[Dict],
