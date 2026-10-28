@@ -135,11 +135,16 @@ class SpiceNetlistParser:
                 tokens = line.split()
                 self.elements.append({"name": tokens[0], "tokens": tokens, "raw": line})
 
-    def simulatable_refs(self, known_refs):
-        """Refs KiCad exported as a complete element: nodes plus a value or a model
-        that is defined in the deck (or may come from an .include).
+    def _is_simulatable(self, e):
+        """Complete element: nodes plus a value or a model that is defined in the deck"""
+        n = node_count(e["tokens"])
+        if n < 1 or len(e["tokens"]) < n + 2:
+            return False
+        model = [t for t in e["tokens"][1:] if "=" not in t][-1]
+        return e["name"][:1].upper() in _VALUE_DEVICES or model in self.models or bool(self.includes)
 
-        A part without simulation model is exported as a bare 'Q1 __Q1' and is skipped.
+    def simulatable_refs(self, known_refs):
+        """Refs KiCad exported as a complete element
 
         Args:
             known_refs: all component references of the schematic.
@@ -148,16 +153,8 @@ class SpiceNetlistParser:
             set of upper-case references.
         """
         refs = {r.upper() for r in known_refs}
-        result = set()
-        for e in self.elements:
-            ref = element_ref(e["name"], refs)
-            n = node_count(e["tokens"])
-            if not ref or n < 1 or len(e["tokens"]) < n + 2:
-                continue
-            model = [t for t in e["tokens"][1:] if "=" not in t][-1]
-            if e["name"][:1].upper() in _VALUE_DEVICES or model in self.models or self.includes:
-                result.add(ref)
-        return result
+        return {element_ref(e["name"], refs) for e in self.elements
+                if self._is_simulatable(e)} - {None}
 
     def filter_block(self, block_components):
         """
@@ -168,13 +165,12 @@ class SpiceNetlistParser:
             block_components: component references forming the block.
 
         Returns:
-            dict with elements, models, includes and missing_refs.
+            dict with elements, models and includes.
         """
         wanted = {r.upper() for r in block_components}
 
-        kept_elements = [e for e in self.elements if element_ref(e["name"], wanted)]
-        found_refs = {element_ref(e["name"], wanted) for e in kept_elements}
-        missing = sorted(wanted - found_refs)
+        kept_elements = [e for e in self.elements
+                         if element_ref(e["name"], wanted) and self._is_simulatable(e)]
 
         used_models = {
             tok for e in kept_elements for tok in e["tokens"] if tok in self.models
@@ -186,7 +182,6 @@ class SpiceNetlistParser:
             "elements": [e["raw"] for e in kept_elements],
             "models": kept_models,
             "includes": list(self.includes),
-            "missing_refs": missing,
         }
 
 

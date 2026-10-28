@@ -83,11 +83,11 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
     supplies: [{net, value}] from the UI; None (direct call) -> DC guessed from the net name.
 
     Returns (deck, error, warnings): deck is the SPICE text, or None with an error
-    message; warnings are block pre-checks and refs missing from the export.
+    message; warnings are the block pre-checks.
     """
     from kicad_mcp.utils.block_analysis import block_warnings, guess_voltage
     from kicad_mcp.utils.block_analysis import reference_net as find_reference_net
-    from kicad_mcp.utils.spice_deck import build_isolated_deck, build_net_node_map
+    from kicad_mcp.utils.spice_deck import build_isolated_deck, build_net_node_map, node_count
 
     # the ports come from the UI, only the block itself is rebuilt
     graph, sp, block = _grow_block(project_path, schematic_path, seed_components)
@@ -111,23 +111,34 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
     if not filtered["elements"]:
         return None, (
             "Fehler: keine simulierbaren Bauteile im Block gefunden. "
-            f"Fehlende/nicht exportierte Refs: {', '.join(filtered['missing_refs']) or 'alle'}. "
             "Seeds muessen Bauteile mit Wert oder Simulationsmodell sein."
         ), []
 
     warnings = block_warnings(block)
-    if filtered["missing_refs"]:
-        warnings.append(
-            f"Nicht exportiert, fehlen im Deck: {', '.join(filtered['missing_refs'])}."
-        )
 
+    # KiCad renames nets in the SPICE export ('Net-(D1-A)' -> 'Net-_D1-A_')
     net_map = build_net_node_map(graph.netlist_data["nets"], sp.elements)
+    node = lambda net: net_map.get(net, net)
+
+    block_nodes = {n for raw in filtered["elements"]
+                   for n in raw.split()[1:1 + node_count(raw.split())]}
+    driven = list(supply_nodes) + [p["net"] for p in ports or []
+                                   if p.get("role") in ("input", "load")]
+    unmapped = [net for net in driven if node(net) not in block_nodes]
+    if unmapped:
+        return None, (
+            f"Fehler: Netz {', '.join(unmapped)} hat im SPICE-Export keinen bekannten Namen - "
+            "die Quelle/Last waere mit keinem Bauteil verbunden. KiCad benennt Netze mit "
+            "Sonderzeichen im Export um (z. B. 'Net-(D1-A)' -> 'Net-_D1-A_'), der neue Name "
+            "laesst sich nur ueber ein R/C/L am Netz ableiten. Abhilfe: dem Netz in KiCad ein "
+            "Label ohne Sonderzeichen geben."
+        ), []
+
     deck = build_isolated_deck(
         kept_elements=filtered["elements"],
-        reference_node=reference_net,
-        supply_nodes=supply_nodes,
-        ports=[(net_map.get(p.get("net"), p.get("net")), p.get("role"), p.get("value"))
-               for p in ports or []],
+        reference_node=node(reference_net),
+        supply_nodes={node(net): spec for net, spec in supply_nodes.items()},
+        ports=[(node(p.get("net")), p.get("role"), p.get("value")) for p in ports or []],
         analysis=analysis or ".op",
         models=filtered["models"],
         includes=filtered["includes"],
@@ -182,7 +193,6 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
 
     rails = block.get("global_nets_touched", [])
     needs_reference = bool(rails) and reference_net(rails) is None
-    # with a reference still to choose all rails are listed, the chosen one is skipped later
     supply_rails = [r for r in rails if r != reference_net(rails)]
 
     with Column(gap=4) as view:

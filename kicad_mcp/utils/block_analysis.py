@@ -5,8 +5,8 @@ import re
 from collections import deque
 
 # lib_id / name fragments for electrically transparent parts the traversal may
-# pass straight through: test points, mounting holes and net ties.
-_PERMEABLE_RE = re.compile(r"testpoint|mountinghole|nettie", re.I)
+# pass straight through: test points and mounting holes.
+_PERMEABLE_RE = re.compile(r"testpoint|mountinghole", re.I)
 
 # default limits for growing a block (select_block)
 DEFAULT_MAX_HOPS = 6
@@ -15,7 +15,7 @@ DEFAULT_MAX_FANOUT = 10
 
 
 def is_permeable(node: dict) -> bool:
-    """Electrically transparent part (test point, mounting hole, net tie), the block
+    """Electrically transparent part (test point, mounting hole), the block
     traversal passes through it.
 
     Args:
