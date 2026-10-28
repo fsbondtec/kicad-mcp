@@ -4,8 +4,7 @@ Component and block classification for extracting simulatable sub-circuits.
 import re
 from collections import deque
 
-# lib_id / name fragments for electrically transparent parts the traversal may
-# pass straight through: test points and mounting holes.
+# lib_id for electrically transparent parts the traversal may pass straight through
 _PERMEABLE_RE = re.compile(r"testpoint|mountinghole", re.I)
 
 # default limits for growing a block (select_block)
@@ -108,12 +107,6 @@ def select_block(graph, seed_refs, simulatable, max_hops=DEFAULT_MAX_HOPS,
     """
 
     seeds = [r.upper() for r in seed_refs]
-
-    missing = [r for r in seeds if r not in graph.adjacency_list
-               or graph.nodes.get(r, {}).get("type") != "component"]
-    if missing:
-        return {"success": False,
-                "error": f"Unbekannte Bauteile: {', '.join(missing)}"}
 
     no_model = [r for r in seeds if r not in simulatable and not is_permeable(graph.nodes[r])]
     if no_model:
