@@ -11,10 +11,13 @@ Roles:
   - load   -> the outside presents an impedance -> value = a passive (R/C/L)
 """
 
+import sys
+
 from fastmcp import FastMCP, FastMCPApp
 from prefab_ui import PrefabApp
 from prefab_ui.components import (
     Column, Row, Input, Button, RadioGroup, Radio, Text, Code, H3, Muted, Label, If, Badge, Svg,
+    Select, SelectOption, Checkbox,
     STATE, RESULT,
 )
 from prefab_ui.actions.mcp import UpdateContext
@@ -49,14 +52,14 @@ def _grow_block(project_path, schematic_path, seed_components):
 def _select_ports(project_path, schematic_path, seed_components):
     """Grow the block from the seeds and pre-fill its ports for the UI.
 
-    Returns (block, ports): ports carry the suggested role, default value, clarify flag
-    and readable outside pins.
+    Returns (graph, block, ports): ports carry the suggested role, default value, clarify
+    flag and readable outside pins.
     """
     from kicad_mcp.utils.block_analysis import suggest_port_role
 
-    _, _, block = _grow_block(project_path, schematic_path, seed_components)
+    graph, _, block = _grow_block(project_path, schematic_path, seed_components)
     if not block.get("success"):
-        return block, []
+        return graph, block, []
 
     ports = []
     for port in block["ports"]:
@@ -64,7 +67,7 @@ def _select_ports(project_path, schematic_path, seed_components):
         ports.append({
             "net": port["net"],
             "role": suggestion["role"],
-            "value": "DC 5" if suggestion["role"] == "input" else "",   # pre-filled in the UI
+            "value": "DC 5" if suggestion["role"] == "input" else "",  
             "clarify": suggestion["clarify"],
             "outside_pins": [
                 f"{p['component']} {p['pinfunction'] or 'Pin ' + p['pin']} "
@@ -142,12 +145,44 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
     return deck, None, warnings
 
 
+_ANALYSIS_DEFAULTS = {
+    "analysis": ".op",
+    "ac_sweep": "dec", "ac_points": "20", "ac_fstart": "1", "ac_fstop": "1Meg",
+    "tran_step": "1u", "tran_stop": "5m", "tran_start": "", "tran_max": "", "tran_uic": False,
+}
+
+
+def _analysis_line(a: dict) -> str:
+    """Build the analysis directive from the UI fields, e.g. '.ac dec 20 1 1Meg'."""
+    v = lambda key: str(a.get(key) or "").strip()
+    if v("analysis") == ".ac":
+        return f".ac {v('ac_sweep')} {v('ac_points')} {v('ac_fstart')} {v('ac_fstop')}"
+    if v("analysis") == ".tran":
+        parts = [".tran", v("tran_step"), v("tran_stop")]
+        if v("tran_start") or v("tran_max"):
+            parts.append(v("tran_start") or "0")    
+        if v("tran_max"):
+            parts.append(v("tran_max"))
+        if a.get("tran_uic"):
+            parts.append("uic")
+        return " ".join(parts)
+    return ".op"
+
+
+def _field(label, name, placeholder=""):
+    """Labelled input field."""
+    with Column(gap=1):
+        Label(label)
+        Input(name=name, placeholder=placeholder)
+
+
 @app.tool()
 def run_simulation(project_path: str, schematic_path: str, seed_components: str,
-                   ports: list, analysis: str = ".op", reference_net: str = "",
+                   ports: list, analysis: dict, reference_net: str = "",
                    supplies: list = None) -> dict:
     """Backend: assemble the isolated block deck and run it through ngspice.
 
+    analysis: the UI analysis fields, turned into the directive.
     supplies: [{net, value}] source spec per supply rail, e.g. 'DC 5 AC 1'.
 
     run_deck validates the deck first; a deck that fails is not run and the report says
@@ -159,8 +194,8 @@ def run_simulation(project_path: str, schematic_path: str, seed_components: str,
     from kicad_mcp.utils.spice_runner import run_deck, format_result
 
     deck, error, warnings = _assemble_deck(
-        project_path, schematic_path, seed_components, ports, analysis, reference_net,
-        supplies,
+        project_path, schematic_path, seed_components, ports, _analysis_line(analysis),
+        reference_net, supplies,
     )
     if error:
         return {"report": error, "svg": ""}
@@ -183,7 +218,7 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
     """
     from kicad_mcp.utils.block_analysis import block_warnings, guess_voltage, reference_net
 
-    block, ports = _select_ports(project_path, schematic_path, seed_components)
+    graph, block, ports = _select_ports(project_path, schematic_path, seed_components)
 
     rails = block.get("global_nets_touched", [])
     needs_reference = bool(rails) and reference_net(rails) is None
@@ -215,7 +250,7 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
                     f"output) - bitte pruefen: {', '.join(unclear)}"
                 )
 
-        state = {"sim_result": "", "sim_svg": "", "analysis": ".op", "reference_net": ""}
+        state = {"sim_result": "", "sim_svg": "", "reference_net": "", **_ANALYSIS_DEFAULTS}
 
         if needs_reference:
             with Column(gap=1):
@@ -238,8 +273,30 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
 
         with Column(gap=1):
             Label("Analyse")
-            Input(name="analysis", placeholder=".op | .ac dec 20 1 1Meg | .tran 1u 5m")
-            Muted(".op = Arbeitspunkt, .ac = Frequenzgang (braucht AC-Quelle), .tran = Zeitverlauf.")
+            with Select(name="analysis"):
+                SelectOption(value=".op", label="Arbeitspunkt (.op)")
+                SelectOption(value=".ac", label="Frequenzgang (.ac) - braucht AC-Quelle")
+                SelectOption(value=".tran", label="Zeitverlauf (.tran)")
+            with If("analysis == '.ac'"):
+                with Row(gap=4):
+                    with Column(gap=1):
+                        Label("Verlauf")
+                        with Select(name="ac_sweep"):
+                            SelectOption(value="dec", label="dec - Punkte pro Dekade")
+                            SelectOption(value="oct", label="oct - Punkte pro Oktave")
+                            SelectOption(value="lin", label="lin - Punkte gesamt")
+                    _field("Punkte", "ac_points", "20")
+                    _field("Startfrequenz", "ac_fstart", "1")
+                    _field("Stoppfrequenz", "ac_fstop", "1Meg")
+            with If("analysis == '.tran'"):
+                with Row(gap=4):
+                    _field("Schrittweite (Tstep)", "tran_step", "1u")
+                    _field("Endzeit (Tstop)", "tran_stop", "5m")
+                    _field("Startzeit (Tstart, optional)", "tran_start", "0")
+                    _field("Max. Schritt (dTmax, optional)", "tran_max")
+                Checkbox(name="tran_uic",
+                         label="UIC - Anfangsbedingungen (ic=...) statt Arbeitspunkt verwenden")
+            Muted("SPICE-Einheiten: k, Meg, m, u, n - Achtung: M heisst milli, nicht Mega.")
         args_ports = []
         for i, p in enumerate(ports):
             state[f"role_{i}"] = p["role"]
@@ -248,7 +305,7 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
             with Row(gap=6, align="start"):
                 with Column(gap=1):
                     Label("Port (Netz)")
-                    Text(p["net"])
+                    Text(f"{i + 1}: {p['net']}")    # number as in the schematic excerpt
                     if p["clarify"]:
                         Badge("Rolle unklar - bitte pruefen", variant="warning")
                     Muted(f"Aussen: {', '.join(p['outside_pins'])}")
@@ -280,7 +337,7 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
             "schematic_path": schematic_path,
             "seed_components": seed_components,
             "ports": args_ports,
-            "analysis": getattr(STATE, "analysis"),
+            "analysis": {k: getattr(STATE, k) for k in _ANALYSIS_DEFAULTS},
             "reference_net": getattr(STATE, "reference_net"),
             "supplies": args_supplies,
         }
