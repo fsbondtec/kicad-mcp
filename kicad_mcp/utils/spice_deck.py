@@ -165,7 +165,7 @@ class SpiceNetlistParser:
             block_components: component references forming the block.
 
         Returns:
-            dict with elements, models and includes.
+            dict with elements and models.
         """
         wanted = {r.upper() for r in block_components}
 
@@ -177,11 +177,9 @@ class SpiceNetlistParser:
         }
         kept_models = [self.models[n] for n in sorted(used_models)]
 
-
         return {
             "elements": [e["raw"] for e in kept_elements],
             "models": kept_models,
-            "includes": list(self.includes),
         }
 
 
@@ -217,13 +215,13 @@ def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, anal
     Args:
         kept_elements: raw block element lines 
         reference_node: SPICE node tied to 0 (the reference net / node 0).
-        supply_nodes: {node: source spec} each becomes an independent source to 0,
-            e.g. {'+5V': 'DC 5 AC 1'}.
+        supply_nodes: {node: source spec} without the reference node, each becomes an
+            independent source to 0, e.g. {'+5V': 'DC 5 AC 1'}.
         ports: [(node, role, value)] from the user's per-port config,
             role 'input' | 'load' | 'output'.
         analysis: analysis directive, e.g. '.op' or '.ac dec 20 1 1Meg'.
         models: model/subckt card lines referenced by the block (from filter_block).
-        includes: .include lines needed by the block (from filter_block).
+        includes: .include lines of the export.
         title: deck title line.
 
     Returns:
@@ -235,8 +233,6 @@ def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, anal
     lines.extend(models or [])
 
     for i, (node, spec) in enumerate(sorted(supply_nodes.items()), start=1):
-        if node == reference_node:
-            continue
         lines.append(f"V{i}_supply {node} 0 {spec}")
 
     # input -> source 'Vin<i>', load -> passive 'R/C/Lload<i>' (R if no type given), output -> open
@@ -257,7 +253,9 @@ def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, anal
         n = node_count(tokens)
         tokens[1:1 + n] = ["0" if t == reference_node else t for t in tokens[1:1 + n]]
         if tokens[0][:1].upper() in ("R", "C", "L") and len(tokens) >= 4:
-            tokens[3] = tokens[3].split("/")[0].strip()
+            # KiCad copies the whole Value field ('1n 50V C0G', '10k/1%'): keep the value
+            # and real parameters (ic=0), drop the rest
+            tokens = tokens[:3] + [tokens[3].split("/")[0]] + [t for t in tokens[4:] if "=" in t]
         lines.append(" ".join(tokens))
 
     lines.append(analysis)

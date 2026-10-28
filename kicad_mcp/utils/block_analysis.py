@@ -72,7 +72,6 @@ def classify_block_boundary(graph, block_components):
         if outside:
             ports.append({
                 "net": net_name,
-                "pins_inside": [_pin_record(c) for c in inside],
                 "pins_outside": [_pin_record(c) for c in outside],
             })
         elif len(inside) == 1:
@@ -97,7 +96,7 @@ def select_block(graph, seed_refs, simulatable, max_hops=DEFAULT_MAX_HOPS,
 
     Args:
         graph: a built CircuitGraph instance.
-        seed_refs: component reference(s) to start from.
+        seed_refs: list of component references to start from.
         simulatable: refs with a complete SPICE element (SpiceNetlistParser.simulatable_refs).
         max_hops: max BFS hops (in components) from any seed before truncating.
         max_size: max number of components in the block before truncating.
@@ -108,8 +107,6 @@ def select_block(graph, seed_refs, simulatable, max_hops=DEFAULT_MAX_HOPS,
         high_fanout (nets not followed: [{net, fanout}]) and the truncated flag/reason.
     """
 
-    if isinstance(seed_refs, str):
-        seed_refs = [seed_refs]
     seeds = [r.upper() for r in seed_refs]
 
     missing = [r for r in seeds if r not in graph.adjacency_list

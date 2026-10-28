@@ -80,12 +80,10 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
                    supplies: list = None):
     """Rebuild the block and assemble the isolated SPICE deck from the ports and supplies.
 
-    supplies: [{net, value}] from the UI; None (direct call) -> DC guessed from the net name.
-
-    Returns (deck, error, warnings): deck is the SPICE text, or None with an error
+    Returns: deck is the SPICE text, or None with an error
     message; warnings are the block pre-checks.
     """
-    from kicad_mcp.utils.block_analysis import block_warnings, guess_voltage
+    from kicad_mcp.utils.block_analysis import block_warnings
     from kicad_mcp.utils.block_analysis import reference_net as find_reference_net
     from kicad_mcp.utils.spice_deck import build_isolated_deck, build_net_node_map, node_count
 
@@ -100,11 +98,8 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
         return None, (
             "Fehler: kein Massenetz (GND) im Block - bitte in der UI ein Bezugsnetz waehlen."
         ), []
-    
-    if supplies is None:
-        supplies = [{"net": r, "value": f"DC {guess_voltage(r):g}"} for r in rails
-                    if guess_voltage(r) is not None]
-    supply_nodes = {s["net"]: s["value"] for s in supplies
+
+    supply_nodes = {s["net"]: s["value"] for s in supplies or []
                     if (s.get("value") or "").strip() and s["net"] != reference_net}
 
     filtered = sp.filter_block(block["block_components"])
@@ -141,7 +136,7 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
         ports=[(node(p.get("net")), p.get("role"), p.get("value")) for p in ports or []],
         analysis=analysis or ".op",
         models=filtered["models"],
-        includes=filtered["includes"],
+        includes=sp.includes,
         title=f".title isolated block ({'+'.join(block['block_components'])})",
     )
     return deck, None, warnings
@@ -153,8 +148,7 @@ def run_simulation(project_path: str, schematic_path: str, seed_components: str,
                    supplies: list = None) -> dict:
     """Backend: assemble the isolated block deck and run it through ngspice.
 
-    supplies: [{net, value}] source spec per supply rail, e.g. 'DC 5 AC 1'; omitted ->
-    DC voltage guessed from the net name.
+    supplies: [{net, value}] source spec per supply rail, e.g. 'DC 5 AC 1'.
 
     run_deck validates the deck first; a deck that fails is not run and the report says
     what to fix. Otherwise reports the node voltages, or the errors ngspice raised.

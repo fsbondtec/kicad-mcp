@@ -101,10 +101,9 @@ def run_deck(deck: str) -> dict:
           svg (str)           - .ac / .tran: diagram drawn by ngspice, None otherwise.
           errors (list[str])  - validation errors, fatal ngspice messages / exceptions.
           warnings (list[str])- validation warnings and non-fatal ngspice messages.
-          log (str)           - full captured ngspice/PySpice log.
     """
     out = {"success": False, "validation_failed": False, "analysis": None, "voltages": {},
-           "sweep": None, "svg": None, "errors": [], "warnings": [], "log": ""}
+           "sweep": None, "svg": None, "errors": [], "warnings": []}
 
     check = validate_deck(deck)
     out["warnings"] += check["warnings"]
@@ -181,7 +180,6 @@ def run_deck(deck: str) -> dict:
         elif low.startswith("warning") and "spinit" not in low \
                 and "unsupported ngspice" not in low:
             out["warnings"].append(line)
-    out["log"] = "\n".join(collector.records)
 
     if out["errors"]:
         out["success"] = False
