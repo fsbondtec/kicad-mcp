@@ -115,3 +115,11 @@ def find_kicad_cli() -> Optional[str]:
     # Fall back to whatever kicad-cli is available on PATH.
     exe_name = "kicad-cli.exe" if system == "Windows" else "kicad-cli"
     return shutil.which(exe_name)
+
+
+def kicad_cli_env() -> Dict[str, str]:
+    """Environment for netlist exports"""
+    
+    config_dir = os.path.join(tempfile.gettempdir(), "kicad-mcp", "kicad-config")
+    os.makedirs(config_dir, exist_ok=True)
+    return {**os.environ, "KICAD_CONFIG_HOME": config_dir}

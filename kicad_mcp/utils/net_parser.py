@@ -4,7 +4,7 @@ import sys
 import subprocess
 import tempfile
 
-from kicad_mcp.utils.cli_drc import find_kicad_cli
+from kicad_mcp.utils.cli_drc import find_kicad_cli, kicad_cli_env
 
 def sexp_children(node, tag):
     """Return every child of `node` whose head symbol equals `tag`."""
@@ -67,7 +67,7 @@ class NetlistParser:
                     self.schematic_path,
                 ]
 
-                process = subprocess.run(cmd, capture_output=True, text=True)
+                process = subprocess.run(cmd, capture_output=True, text=True, env=kicad_cli_env())
 
                 if process.returncode != 0:
                     print(f"Netlist export failed: {process.stderr.strip()}", file=sys.stderr)

@@ -11,7 +11,7 @@ import tempfile
 import threading
 from collections import defaultdict
 
-from kicad_mcp.utils.cli_drc import find_kicad_cli
+from kicad_mcp.utils.cli_drc import find_kicad_cli, kicad_cli_env
 from kicad_mcp.utils.file_utils import hash_schematic
 
 
@@ -82,7 +82,8 @@ class SpiceNetlistParser:
                 ]
 
                 process = subprocess.run(
-                    cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL
+                    cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                    env=kicad_cli_env(),
                 )
 
                 if process.returncode != 0:

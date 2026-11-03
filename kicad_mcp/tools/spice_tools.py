@@ -29,7 +29,6 @@ app = FastMCPApp("SpiceSimulation")
 MAX_IMAGE_BYTES = 600_000
 
 
-
 def _grow_block(project_path, schematic_path, seed_components):
     """Export the SPICE netlist and grow the block from the seeds over the parts KiCad
     exported with a value or simulation model.
@@ -349,8 +348,8 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
                 with Row(gap=4):
                     _field("Schrittweite (Tstep)", "tran_step", "1u")
                     _field("Endzeit (Tstop)", "tran_stop", "5m")
-                    _field("Startzeit (Tstart, optional)", "tran_start", "0")
-                    _field("Max. Schritt (dTmax, optional)", "tran_max")
+                    _field("Startzeit (Tstart)", "tran_start", "optional")
+                    _field("Max. Schritt (dTmax)", "tran_max", "optional")
                 Checkbox(name="tran_uic",
                          label="UIC - Anfangsbedingungen (ic=...) statt Arbeitspunkt verwenden")
             Muted("SPICE-Einheiten: k, Meg, m, u, n - Achtung: M heisst milli, nicht Mega.")
