@@ -16,8 +16,9 @@ import sys
 from fastmcp import FastMCP, FastMCPApp
 from prefab_ui import PrefabApp
 from prefab_ui.components import (
-    Column, Row, Input, Button, RadioGroup, Radio, Text, Code, H3, Muted, Label, If, Badge, Svg,
-    Select, SelectOption, Checkbox,
+    Column, Row, Grid, Input, Button, Text, Code, H3, Muted, Label, If, Else, Badge, Svg,
+    Select, SelectOption, Checkbox, Separator, Card, CardHeader, CardTitle, CardContent,
+    Accordion, AccordionItem, Tabs, Tab,
     STATE, RESULT,
 )
 from prefab_ui.actions.mcp import UpdateContext
@@ -54,7 +55,7 @@ def _grow_block(project_path, schematic_path, seed_components):
 def _select_ports(project_path, schematic_path, seed_components):
     """Grow the block from the seeds and pre-fill its ports for the UI.
 
-    Returns (graph, block, ports): ports carry the suggested role, default value, clarify
+    Returns (graph, block, ports): ports carry the suggested role, clarify
     flag and readable outside pins.
     """
     from kicad_mcp.utils.block_analysis import suggest_port_role
@@ -69,7 +70,6 @@ def _select_ports(project_path, schematic_path, seed_components):
         ports.append({
             "net": port["net"],
             "role": suggestion["role"],
-            "value": "DC 5" if suggestion["role"] == "input" else "",  
             "clarify": suggestion["clarify"],
             "outside_pins": [
                 f"{p['component']} {p['pinfunction'] or 'Pin ' + p['pin']} "
@@ -192,6 +192,16 @@ _ANALYSIS_DEFAULTS = {
     "tran_step": "1u", "tran_stop": "5m", "tran_start": "", "tran_max": "", "tran_uic": False,
 }
 
+_SOURCE_FIELDS = {
+    "DC": [("dc", "Spannung", "5")],
+    "PULSE": [("v1", "Low", "0"), ("v2", "High", "5"), ("td", "Verzögerung", "0"),
+              ("tr", "Anstieg", "1u"), ("tf", "Abfall", "1u"), ("pw", "Pulsbreite", "50u"),
+              ("per", "Periode", "100u")],
+    "SIN": [("vo", "Offset", "0"), ("va", "Amplitude", "1"), ("freq", "Frequenz", "1k"),
+            ("sin_td", "Verzögerung", "optional")],
+}
+_SOURCE_KEYS = ["type", "ac"] + [key for fields in _SOURCE_FIELDS.values() for key, _, _ in fields]
+
 
 def _analysis_line(a: dict) -> str:
     """Build the analysis directive from the UI fields, e.g. '.ac dec 20 1 1Meg'."""
@@ -201,13 +211,41 @@ def _analysis_line(a: dict) -> str:
     if v("analysis") == ".tran":
         parts = [".tran", v("tran_step"), v("tran_stop")]
         if v("tran_start") or v("tran_max"):
-            parts.append(v("tran_start") or "0")    
+            parts.append(v("tran_start") or "0")
         if v("tran_max"):
             parts.append(v("tran_max"))
         if a.get("tran_uic"):
             parts.append("uic")
         return " ".join(parts)
     return ".op"
+
+
+def _source_spec(source: dict) -> str:
+    """Build the SPICE source text from the UI fields, e.g. 'PULSE(0 5 0 1u 1u 50u 100u) AC 1'.
+    """
+    v = lambda key: str(source.get(key) or "").strip()
+    kind = v("type") or "DC"
+    values = [v(key) for key, _, _ in _SOURCE_FIELDS[kind]]
+    while values and not values[-1]:
+        values.pop()
+
+    parts = []
+    if values:
+        values = [value or "0" for value in values]
+        parts.append(f"DC {values[0]}" if kind == "DC" else f"{kind}({' '.join(values)})")
+    if v("ac"):
+        parts.append(f"AC {v('ac')}")
+    return " ".join(parts)
+
+
+def _port_value(port: dict) -> str:
+    """SPICE value of a port: source text for input, 'R 10k' for load, '' for output."""
+    if port.get("role") == "input":
+        return _source_spec(port.get("source") or {})
+    if port.get("role") == "load":
+        value = str(port.get("load_value") or "").strip()
+        return f"{port.get('load_type') or 'R'} {value}" if value else ""
+    return ""
 
 
 def _field(label, name, placeholder=""):
@@ -217,33 +255,67 @@ def _field(label, name, placeholder=""):
         Input(name=name, placeholder=placeholder)
 
 
+def _source_fields(prefix, state, dc=""):
+    """Type selection and the fields of one independent source (supply or input port).
+
+    Returns:
+        {field: STATE reference} for run_simulation, turned into text by _source_spec.
+    """
+    for key in _SOURCE_KEYS:
+        state[f"{prefix}_{key}"] = ""
+    state[f"{prefix}_type"] = "DC"
+    state[f"{prefix}_dc"] = dc
+
+    with Grid(minColumnWidth="6rem", gap=2, align="end"):
+        with Column(gap=1):
+            Label("Quelle")
+            with Select(name=f"{prefix}_type"):
+                SelectOption(value="DC", label="DC")
+                SelectOption(value="PULSE", label="PULSE")
+                SelectOption(value="SIN", label="SIN")
+        for kind, fields in _SOURCE_FIELDS.items():
+            with If(f"{prefix}_type == '{kind}'"):
+                for key, label, placeholder in fields:
+                    _field(label, f"{prefix}_{key}", placeholder)
+        _field("AC-Amplitude", f"{prefix}_ac", "nur für .ac")
+
+    return {key: getattr(STATE, f"{prefix}_{key}") for key in _SOURCE_KEYS}
+
+
 @app.tool()
 def run_simulation(project_path: str, schematic_path: str, seed_components: str,
                    ports: list, analysis: dict, reference_net: str = "",
                    supplies: list = None) -> dict:
     """Backend: assemble the isolated block deck and run it through ngspice.
 
+    ports: [{net, role, source, load_type, load_value}] from the UI.
     analysis: the UI analysis fields, turned into the directive.
-    supplies: [{net, value}] source spec per supply rail, e.g. 'DC 5 AC 1'.
+    supplies: [{net, source}] source fields per supply rail.
 
     run_deck validates the deck first; a deck that fails is not run and the report says
     what to fix. Otherwise reports the node voltages, or the errors ngspice raised.
 
     Returns:
-        {"report": text incl. the deck, "svg": ngspice diagram for .ac / .tran or ""}.
+        {"report": result text, "deck": SPICE deck, "context": report + deck for the
+        model, "svg": ngspice diagram for .ac / .tran or ""}.
     """
     from kicad_mcp.utils.spice_runner import run_deck, format_result
+
+    ports = [{"net": p["net"], "role": p.get("role"), "value": _port_value(p)} for p in ports or []]
+    supplies = [{"net": s["net"], "value": _source_spec(s.get("source") or {})}
+                for s in supplies or []]
 
     deck, error, warnings = _assemble_deck(
         project_path, schematic_path, seed_components, ports, _analysis_line(analysis),
         reference_net, supplies,
     )
     if error:
-        return {"report": error, "svg": ""}
+        return {"report": error, "deck": "", "context": error, "svg": ""}
 
     result = run_deck(deck)
     result["warnings"] = warnings + result["warnings"]
-    return {"report": format_result(result) + "\n\n--- Deck ---\n" + deck,
+    report = format_result(result)
+    return {"report": report, "deck": deck, "context": f"{report}\n\n--- Deck ---\n{deck}",
             "svg": result["svg"] or ""}
 
 
@@ -271,122 +343,141 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
             Muted(f"Keine gueltigen Seeds: {block['error']}")
             return PrefabApp(state={}, view=view)
 
-        for warning in block_warnings(block):
-            Muted(f"Hinweis: {warning}")
+        state = {"sim_result": "", "sim_deck": "", "sim_svg": "", "reference_net": "",
+                 **_ANALYSIS_DEFAULTS}
 
-        try:
-            images = _block_images(project_path, graph, block, ports)
-        except Exception as e:
-            print(f"Schaltplanausschnitt fehlgeschlagen: {e}", file=sys.stderr)
-            images = []
-        shown = 0
-        for image in images:
-            if shown + len(image) > MAX_IMAGE_BYTES:
-                Muted("Weitere Schaltplanausschnitte ausgelassen - zu gross fuer die Anzeige.")
-                break
-            Svg(image, width="100%")
-            shown += len(image)
-        if not images:
-            Muted("Schaltplanausschnitt nicht verfuegbar.")
-
+        hints = [f"Hinweis: {warning}" for warning in block_warnings(block)]
+        unclear = [p["net"] for p in ports if p["clarify"]]
+        if unclear:
+            hints.append(f"Rolle unklar (vorbelegt als output) - bitte pruefen: {', '.join(unclear)}")
         if not ports:
-            Muted(
-                f"Block {', '.join(block['block_components'])} hat keine offenen Ports - "
-                "er wird nur aus den Versorgungsnetzen gespeist."
-            )
-        else:
-            Muted(
-                "Jeder Port ist ein Netz, das den Block verlaesst. Lege je Port fest, "
-                "was dort angeschlossen wird (Vorschlag ist vorbelegt)."
-            )
-            unclear = [p["net"] for p in ports if p["clarify"]]
-            if unclear:
-                Muted(
-                    f"{len(unclear)} von {len(ports)} Ports mit unklarer Rolle (vorbelegt als "
-                    f"output) - bitte pruefen: {', '.join(unclear)}"
-                )
+            hints.append("Keine offenen Ports - der Block wird nur aus den Versorgungsnetzen gespeist.")
+        hints += [
+            "Jeder Port ist ein Netz, das den Block verlaesst. Lege je Port fest, was dort "
+            "angeschlossen wird",
+            "Quellen: DC fuer .op, AC-Amplitude fuer .ac, PULSE/SIN fuer .tran.",
+            "SPICE-Einheiten: k, Meg, m, u, n",
+        ]
 
-        state = {"sim_result": "", "sim_svg": "", "reference_net": "", **_ANALYSIS_DEFAULTS}
-
-        if needs_reference:
-            with Column(gap=1):
-                Label("Bezugsnetz (Masse)")
-                with RadioGroup(name="reference_net"):
-                    for rail in rails:
-                        Radio(option=rail, label=rail)
-                Muted("Kein GND-Netz im Block - waehle das Netz, das als Knoten 0 gilt.")
+        with Card():
+            with CardHeader():
+                CardTitle(f"Block {', '.join(block['block_components'])}")
+            with CardContent():
+                try:
+                    images = _block_images(project_path, graph, block, ports)
+                except Exception as e:
+                    print(f"Schaltplanausschnitt fehlgeschlagen: {e}", file=sys.stderr)
+                    images = []
+                shown = 0
+                for image in images:
+                    if shown + len(image) > MAX_IMAGE_BYTES:
+                        Muted("Weitere Schaltplanausschnitte ausgelassen, zu gross fuer die Anzeige.")
+                        break
+                    Svg(image, width="100%")
+                    shown += len(image)
+                if not images:
+                    Muted("Schaltplanausschnitt nicht verfuegbar.")
+                with Accordion(collapsible=True):
+                    with AccordionItem(title=f"Hinweise ({len(hints)})"):
+                        for hint in hints:
+                            Muted(hint)
 
         args_supplies = []
-        if supply_rails:
-            Label("Versorgung (Quelle je Netz gegen Masse, leer = keine Quelle)")
-        for i, rail in enumerate(supply_rails):
-            voltage = guess_voltage(rail)
-            state[f"supply_{i}"] = f"DC {voltage:g}" if voltage is not None else ""
-            with Row(gap=6, align="center"):
-                Text(rail)
-                Input(name=f"supply_{i}", placeholder="z. B. DC 5, DC 5 AC 1, PULSE(0 5 0 1m)")
-            args_supplies.append({"net": rail, "value": getattr(STATE, f"supply_{i}")})
+        if needs_reference or supply_rails:
+            with Card():
+                with CardHeader():
+                    CardTitle("Versorgung")
+                with CardContent():
+                    with Column(gap=3):
+                        if needs_reference:
+                            with Row(gap=3, align="center"):
+                                Label("Masse (Knoten 0)")
+                                with Select(name="reference_net", placeholder="Bezugsnetz waehlen"):
+                                    for rail in rails:
+                                        SelectOption(value=rail, label=rail)
+                        for i, rail in enumerate(supply_rails):
+                            voltage = guess_voltage(rail)
+                            quoted = rail.replace("\\", "\\\\").replace("'", "\\'")
+                            with If(f"reference_net != '{quoted}'"):
+                                Text(rail)
+                                source = _source_fields(f"supply_{i}", state,
+                                                        f"{voltage:g}" if voltage is not None else "")
+                            args_supplies.append({"net": rail, "source": source})
+                        if supply_rails:
+                            Muted("Spannung leer lassen = keine Quelle an diesem Netz.")
 
-        with Column(gap=1):
-            Label("Analyse")
-            with Select(name="analysis"):
-                SelectOption(value=".op", label="Arbeitspunkt (.op)")
-                SelectOption(value=".ac", label="Frequenzgang (.ac) - braucht AC-Quelle")
-                SelectOption(value=".tran", label="Zeitverlauf (.tran)")
-            with If("analysis == '.ac'"):
-                with Row(gap=4):
-                    with Column(gap=1):
-                        Label("Verlauf")
-                        with Select(name="ac_sweep"):
-                            SelectOption(value="dec", label="dec - Punkte pro Dekade")
-                            SelectOption(value="oct", label="oct - Punkte pro Oktave")
-                            SelectOption(value="lin", label="lin - Punkte gesamt")
-                    _field("Punkte", "ac_points", "20")
-                    _field("Startfrequenz", "ac_fstart", "1")
-                    _field("Stoppfrequenz", "ac_fstop", "1Meg")
-            with If("analysis == '.tran'"):
-                with Row(gap=4):
-                    _field("Schrittweite (Tstep)", "tran_step", "1u")
-                    _field("Endzeit (Tstop)", "tran_stop", "5m")
-                    _field("Startzeit (Tstart)", "tran_start", "optional")
-                    _field("Max. Schritt (dTmax)", "tran_max", "optional")
-                Checkbox(name="tran_uic",
-                         label="UIC - Anfangsbedingungen (ic=...) statt Arbeitspunkt verwenden")
-            Muted("SPICE-Einheiten: k, Meg, m, u, n - Achtung: M heisst milli, nicht Mega.")
         args_ports = []
-        for i, p in enumerate(ports):
-            state[f"role_{i}"] = p["role"]
-            state[f"value_{i}"] = p["value"]
+        if ports:
+            with Card():
+                with CardHeader():
+                    CardTitle("Ports")
+                with CardContent():
+                    with Column(gap=3):
+                        for i, p in enumerate(ports):
+                            if i:
+                                Separator()
+                            state[f"role_{i}"] = p["role"]
+                            state[f"load_type_{i}"] = "R"
+                            state[f"load_value_{i}"] = ""
 
-            with Row(gap=6, align="start"):
-                with Column(gap=1):
-                    Label("Port (Netz)")
-                    Text(f"{i + 1}: {p['net']}")    # number as in the schematic excerpt
-                    if p["clarify"]:
-                        Badge("Rolle unklar - bitte pruefen", variant="warning")
-                    Muted(f"Aussen: {', '.join(p['outside_pins'])}")
-                with Column(gap=1):
-                    Label("Rolle")
-                    with RadioGroup(name=f"role_{i}"):
-                        Radio(option="input", label="input - Quelle treibt das Netz")
-                        Radio(option="output", label="output - Ausgang, wird gemessen")
-                        Radio(option="load", label="load - Impedanz/Last (R/C)")
-                with Column(gap=1):
-                    Label("Wert")
-                    with If(f"role_{i} == 'input'"):
-                        Input(name=f"value_{i}", placeholder="z. B. DC 5, AC 1, SIN(0 1 1k)")
-                        Muted("SPICE-Quelle: DC fuer .op, AC fuer .ac, SIN/PULSE fuer .tran.")
-                    with If(f"role_{i} == 'load'"):
-                        Input(name=f"value_{i}", placeholder="z. B. R 10k, C 100p, L 1m")
-                        Muted("Passive Last gegen Masse: Bauteiltyp + Wert.")
-                    with If(f"role_{i} == 'output'"):
-                        Muted("Ausgang - wird gemessen, keine Eingabe noetig.")
+                            with Row(gap=3, align="center"):
+                                Text(f"{i + 1}: {p['net']}")    
+                                if p["clarify"]:
+                                    Badge("Rolle unklar", variant="warning")
+                                with Select(name=f"role_{i}"):
+                                    SelectOption(value="input", label="input - Quelle")
+                                    SelectOption(value="output", label="output - wird gemessen")
+                                    SelectOption(value="load", label="load - Last gegen Masse")
+                            Muted(f"Aussen: {', '.join(p['outside_pins'])}")
 
-            args_ports.append({
-                "net": p["net"],
-                "role": getattr(STATE, f"role_{i}"),
-                "value": getattr(STATE, f"value_{i}"),
-            })
+                            with If(f"role_{i} == 'input'"):
+                                source = _source_fields(f"port_{i}", state, "5")
+                            with If(f"role_{i} == 'load'"):
+                                with Grid(minColumnWidth="6rem", gap=2, align="end"):
+                                    with Column(gap=1):
+                                        Label("Last")
+                                        with Select(name=f"load_type_{i}"):
+                                            SelectOption(value="R", label="R")
+                                            SelectOption(value="C", label="C")
+                                            SelectOption(value="L", label="L")
+                                    _field("Wert", f"load_value_{i}", "10k")
+
+                            args_ports.append({
+                                "net": p["net"],
+                                "role": getattr(STATE, f"role_{i}"),
+                                "source": source,
+                                "load_type": getattr(STATE, f"load_type_{i}"),
+                                "load_value": getattr(STATE, f"load_value_{i}"),
+                            })
+
+        with Card():
+            with CardHeader():
+                CardTitle("Analyse")
+            with CardContent():
+                with Column(gap=3):
+                    with Select(name="analysis"):
+                        SelectOption(value=".op", label="Arbeitspunkt (.op)")
+                        SelectOption(value=".ac", label="Frequenzgang (.ac) - braucht AC-Amplitude")
+                        SelectOption(value=".tran", label="Zeitverlauf (.tran)")
+                    with If("analysis == '.ac'"):
+                        with Grid(columns=4, gap=2, align="end"):
+                            with Column(gap=1):
+                                Label("Verlauf")
+                                with Select(name="ac_sweep"):
+                                    SelectOption(value="dec", label="dec - pro Dekade")
+                                    SelectOption(value="oct", label="oct - pro Oktave")
+                                    SelectOption(value="lin", label="lin - gesamt")
+                            _field("Punkte", "ac_points", "20")
+                            _field("Startfrequenz", "ac_fstart", "1")
+                            _field("Stoppfrequenz", "ac_fstop", "1Meg")
+                    with If("analysis == '.tran'"):
+                        with Grid(columns=4, gap=2, align="end"):
+                            _field("Schrittweite", "tran_step", "1u")
+                            _field("Endzeit", "tran_stop", "5m")
+                            _field("Startzeit", "tran_start", "optional")
+                            _field("Max. Schritt", "tran_max", "optional")
+                        Checkbox(name="tran_uic",
+                                 label="Einschalten simulieren, alle C/L starten bei 0 (UIC)")
 
         call_args = {
             "project_path": project_path,
@@ -405,16 +496,25 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
                 arguments=call_args,
                 onSuccess=[
                     SetState("sim_result", RESULT.report),
+                    SetState("sim_deck", RESULT.deck),
                     SetState("sim_svg", RESULT.svg),
-                    UpdateContext(content=RESULT.report),
+                    UpdateContext(content=RESULT.context),
                 ],
                 onError=SetState("sim_result", "Fehler beim Aufruf von run_simulation."),
             ),
         )
 
-        Label("Simulationsergebnis")
-        Svg(getattr(STATE, "sim_svg"), width="100%")
-        Code(getattr(STATE, "sim_result"))
+        with If("sim_result"):
+            with Tabs(value="report"):
+                with Tab(title="Bericht", value="report"):
+                    Code(getattr(STATE, "sim_result"))
+                with Tab(title="Diagramm", value="plot"):
+                    with If("sim_svg"):
+                        Svg(getattr(STATE, "sim_svg"), width="100%")
+                    with Else():
+                        Muted("Diagramm nur bei .ac und .tran.")
+                with Tab(title="Deck", value="deck"):
+                    Code(getattr(STATE, "sim_deck"))
 
     return PrefabApp(state=state, view=view)
 
