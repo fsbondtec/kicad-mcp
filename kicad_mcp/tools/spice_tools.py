@@ -18,7 +18,8 @@ from prefab_ui import PrefabApp
 from prefab_ui.components import (
     Column, Row, Grid, Input, Button, Text, Code, H3, Muted, Label, If, Else, Badge, Svg,
     Select, SelectOption, Checkbox, Separator, Card, CardHeader, CardTitle, CardContent,
-    Accordion, AccordionItem, Tabs, Tab,
+    Accordion, AccordionItem, Tabs, Tab, Alert, AlertTitle, AlertDescription, ForEach,
+    DataTable, DataTableColumn,
     STATE, RESULT,
 )
 from prefab_ui.actions.mcp import UpdateContext
@@ -282,6 +283,60 @@ def _source_fields(prefix, state, dc=""):
     return {key: getattr(STATE, f"{prefix}_{key}") for key in _SOURCE_KEYS}
 
 
+_RESULT_KEYS = ["status", "summary", "analysis", "voltages", "currents", "errors", "warnings",
+                "deck", "svg"]
+
+_VOLTAGE_COLUMNS = {
+    "op": [("name", "Knoten"), ("value", "Spannung")],
+    "tran": [("name", "Knoten"), ("min", "min"), ("max", "max"), ("end", "Ende")],
+    "ac": [("name", "Knoten"), ("corner", "-3 dB bei"), ("gain", "Betrag (fstop)"),
+           ("phase", "Phase (fstop)")],
+}
+_CURRENT_COLUMNS = {
+    "op": [("name", "Bauteil"), ("value", "Strom")],
+    "tran": [("name", "Bauteil"), ("max", "I max"), ("eff", "I eff")],
+}
+
+
+def _table(columns, rows_key):
+    """DataTable over the rows in the UI state key."""
+    DataTable(columns=[DataTableColumn(key=key, header=header, sortable=True)
+                       for key, header in columns],
+              rows=f"{{{{ {rows_key} }}}}")
+
+
+def _result_view():
+    """Status, errors, warnings and the voltage / current tables of the last run."""
+    with Column(gap=3):
+        with If("sim_status == 'ok'"):
+            with Alert(variant="success", icon="circle-check"):
+                AlertTitle(STATE.sim_summary)
+        with Else():
+            with Alert(variant="destructive", icon="circle-alert"):
+                AlertTitle(STATE.sim_summary)
+                with ForEach("sim_errors") as error:
+                    AlertDescription(error)
+
+        with If(STATE.sim_warnings.length() > 0):
+            with Alert(variant="warning", icon="triangle-alert"):
+                AlertTitle("Warnungen")
+                with ForEach("sim_warnings") as warning:
+                    AlertDescription(warning)
+
+        with If(STATE.sim_voltages.length() > 0):
+            Label("Spannungen")
+            for analysis, columns in _VOLTAGE_COLUMNS.items():
+                with If(f"sim_analysis == '{analysis}'"):
+                    _table(columns, "sim_voltages")
+
+        with If(STATE.sim_currents.length() > 0):
+            Label("Ströme")
+            Muted("positiv = in den Anschluss hinein; negativer Quellenstrom = Quelle liefert")
+            for analysis, columns in _CURRENT_COLUMNS.items():
+                with If(f"sim_analysis == '{analysis}'"):
+                    _table(columns, "sim_currents")
+
+
 @app.tool()
 def run_simulation(project_path: str, schematic_path: str, seed_components: str,
                    ports: list, analysis: dict, reference_net: str = "",
@@ -296,10 +351,11 @@ def run_simulation(project_path: str, schematic_path: str, seed_components: str,
     what to fix. Otherwise reports the node voltages, or the errors ngspice raised.
 
     Returns:
-        {"report": result text, "deck": SPICE deck, "context": report + deck for the
-        model, "svg": ngspice diagram for .ac / .tran or ""}.
+        the result_tables() fields for the UI (status, summary, voltages, currents,
+        errors, warnings) plus "analysis", "deck", "svg" (ngspice diagram for .ac / .tran
+        or "") and "context" (text report + deck for the model).
     """
-    from kicad_mcp.utils.spice_runner import run_deck, format_result
+    from kicad_mcp.utils.spice_runner import run_deck, format_result, result_tables
 
     ports = [{"net": p["net"], "role": p.get("role"), "value": _port_value(p)} for p in ports or []]
     supplies = [{"net": s["net"], "value": _source_spec(s.get("source") or {})}
@@ -310,13 +366,15 @@ def run_simulation(project_path: str, schematic_path: str, seed_components: str,
         reference_net, supplies,
     )
     if error:
-        return {"report": error, "deck": "", "context": error, "svg": ""}
+        return {"status": "invalid", "summary": error, "voltages": [], "currents": [],
+                "errors": [], "warnings": [], "analysis": "", "deck": "", "svg": "",
+                "context": error}
 
     result = run_deck(deck)
     result["warnings"] = warnings + result["warnings"]
     report = format_result(result)
-    return {"report": report, "deck": deck, "context": f"{report}\n\n--- Deck ---\n{deck}",
-            "svg": result["svg"] or ""}
+    return {**result_tables(result, deck), "analysis": result["analysis"] or "", "deck": deck,
+            "svg": result["svg"] or "", "context": f"{report}\n\n--- Deck ---\n{deck}"}
 
 
 @app.ui()
@@ -343,7 +401,9 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
             Muted(f"Keine gueltigen Seeds: {block['error']}")
             return PrefabApp(state={}, view=view)
 
-        state = {"sim_result": "", "sim_deck": "", "sim_svg": "", "reference_net": "",
+        state = {"sim_status": "", "sim_summary": "", "sim_analysis": "", "sim_deck": "",
+                 "sim_svg": "", "sim_voltages": [], "sim_currents": [], "sim_errors": [],
+                 "sim_warnings": [], "reference_net": "",
                  **_ANALYSIS_DEFAULTS}
 
         hints = [f"Hinweis: {warning}" for warning in block_warnings(block)]
@@ -494,20 +554,17 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
             onClick=CallTool(
                 "run_simulation",
                 arguments=call_args,
-                onSuccess=[
-                    SetState("sim_result", RESULT.report),
-                    SetState("sim_deck", RESULT.deck),
-                    SetState("sim_svg", RESULT.svg),
-                    UpdateContext(content=RESULT.context),
-                ],
-                onError=SetState("sim_result", "Fehler beim Aufruf von run_simulation."),
+                onSuccess=[SetState(f"sim_{key}", getattr(RESULT, key)) for key in _RESULT_KEYS]
+                          + [UpdateContext(content=RESULT.context)],
+                onError=[SetState("sim_status", "failed"),
+                         SetState("sim_summary", "Fehler beim Aufruf von run_simulation.")],
             ),
         )
 
-        with If("sim_result"):
-            with Tabs(value="report"):
-                with Tab(title="Bericht", value="report"):
-                    Code(getattr(STATE, "sim_result"))
+        with If("sim_status"):
+            with Tabs(value="result"):
+                with Tab(title="Ergebnis", value="result"):
+                    _result_view()
                 with Tab(title="Diagramm", value="plot"):
                     with If("sim_svg"):
                         Svg(getattr(STATE, "sim_svg"), width="100%")

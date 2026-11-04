@@ -347,8 +347,8 @@ def validate_deck(deck: str) -> dict:
 
     source_lines = [" ".join(t) for t in sources]
     if analysis == ".ac" and not any(re.search(r"\bAC\b", l, re.I) for l in source_lines):
-        errors.append(".ac braucht eine AC-Quelle - z. B. 'DC 5 AC 1' bei einem input-Port "
-                      "oder einer Versorgung.")
+        errors.append(".ac braucht eine AC-Quelle - bei einem input-Port oder einer "
+                      "Versorgung eine AC-Amplitude eintragen (z. B. 1).")
     if analysis == ".tran" and not any(
             re.search(r"\b(SIN|PULSE|PWL|EXP)\s*\(", l, re.I) for l in source_lines):
         warnings.append(".tran nur mit DC-Quellen - Ergebnis ist ein konstanter Verlauf.")

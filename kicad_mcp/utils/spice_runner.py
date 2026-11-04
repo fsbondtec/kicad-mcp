@@ -97,7 +97,8 @@ def run_deck(deck: str) -> dict:
           voltages (dict)     - .op: {node: volts}.
           sweep (dict)        - .ac / .tran: {"axis": frequencies or times,
                                 "nodes": {node: values}} (complex for .ac).
-          currents (dict)     - .op / .tran: {ngspice vector name: amperes} of the top-level elements.
+          currents (dict)     - .op / .tran: {ngspice vector name: amperes} of the top-level
+                                elements, sorted, without zero currents.
           svg (str)           - .ac / .tran: diagram drawn by ngspice, None otherwise.
           errors (list[str])  - validation errors, fatal ngspice messages / exceptions.
           warnings (list[str])- validation warnings and non-fatal ngspice messages.
@@ -163,9 +164,10 @@ def run_deck(deck: str) -> dict:
                 out["sweep"] = {"axis": np.asarray(plot[axis]._data).real, "nodes": nodes}
                 out["svg"] = _plot_svg(ngspice, out["analysis"], nodes, out["warnings"])
             if out["analysis"] != "ac":
-                out["currents"] = {name: np.asarray(vec._data).real for name, vec in plot.items()
-                                   if (name.startswith("@") or vec.is_branch_current)
-                                   and "." not in name}
+                currents = {name: np.asarray(vec._data).real for name, vec in plot.items()
+                            if (name.startswith("@") or vec.is_branch_current) and "." not in name}
+                out["currents"] = {name: data for name, data in sorted(currents.items())
+                                   if data.size and np.abs(data).max() > 1e-12}
 
             ngspice.remove_circuit()
             out["success"] = True
@@ -190,33 +192,117 @@ def run_deck(deck: str) -> dict:
     return out
 
 
-def _si(value, unit):
+def _si(value, unit, digits=3):
     """Format a number with an SI prefix: (1590, 'Hz') -> '1.59 kHz'."""
-    
-    value = float(f"{value:.3g}")     
+
+    value = float(f"{value:.{digits}g}")
     if abs(value) < 1e-12:
         return f"0 {unit}"
     for factor, prefix in ((1e9, "G"), (1e6, "M"), (1e3, "k"), (1, ""),
                            (1e-3, "m"), (1e-6, "µ"), (1e-9, "n")):
         if abs(value) >= factor:
-            return f"{value / factor:.3g} {prefix}{unit}"
-    return f"{value * 1e12:.3g} p{unit}"
+            return f"{value / factor:.{digits}g} {prefix}{unit}"
+    return f"{value * 1e12:.{digits}g} p{unit}"
+
+
+def _summary(result):
+    """One-line status of a run_deck() result."""
+    sweep = result["sweep"]
+    if result["validation_failed"]:
+        return "Validierung FEHLGESCHLAGEN - ngspice wurde nicht gestartet."
+    if not result["success"]:
+        return "Simulation FEHLGESCHLAGEN."
+    if result["analysis"] == "ac":
+        return (f"Simulation OK (Frequenzgang {_si(sweep['axis'][0], 'Hz')} - "
+                f"{_si(sweep['axis'][-1], 'Hz')}).")
+    if result["analysis"] == "tran":
+        return (f"Simulation OK (Zeitverlauf {_si(sweep['axis'][0], 's')} - "
+                f"{_si(sweep['axis'][-1], 's')}, {len(sweep['axis'])} Punkte).")
+    return "Simulation OK (Arbeitspunkt gelöst)."
+
+
+def _corner_frequency(freqs, db):
+    """Frequency where the magnitude first falls 3 dB below its start value, or None."""
+    below = np.nonzero(db < db[0] - 3)[0]
+    if not below.size or below[0] == 0:
+        return None
+    i = below[0]
+    return 10 ** np.interp(db[0] - 3, [db[i], db[i - 1]], np.log10([freqs[i], freqs[i - 1]]))
+
+
+def result_tables(result: dict, deck: str) -> dict:
+    """Render a run_deck() result as table rows for the UI.
+    Returns:
+        {"status": 'ok' | 'failed' | 'invalid', "summary": one-line status,
+         "voltages": [row], "currents": [row], "errors": [...], "warnings": [...]};
+        the row keys depend on the analysis (.op value, .tran min/max/end/eff,
+        .ac corner/gain/phase).
+    """
+    spelling = {token.lower(): token for line in deck.splitlines() if line[:1].isalpha()
+                for token in line.split()}
+    name = lambda node: spelling.get(node, node)
+    analysis = result["analysis"]
+    sweep = result["sweep"]
+
+    voltages = []
+    if result["voltages"]:
+        for node, v in sorted(result["voltages"].items()):
+            voltages.append({"name": name(node), "value": _si(v, "V", digits=4)})
+    elif sweep and analysis == "tran":
+        for node, values in sorted(sweep["nodes"].items()):
+            values = values.real
+            voltages.append({"name": name(node), "min": _si(values.min(), "V"),
+                             "max": _si(values.max(), "V"), "end": _si(values[-1], "V")})
+    elif sweep and analysis == "ac":
+        freqs = sweep["axis"]
+        for node, values in sorted(sweep["nodes"].items()):
+            if not np.abs(values).any():
+                voltages.append({"name": name(node), "corner": "-", "gain": "kein AC-Anteil",
+                                 "phase": "-"})
+                continue
+            db = 20 * np.log10(np.maximum(np.abs(values), 1e-30))
+            corner = _corner_frequency(freqs, db)
+            voltages.append({"name": name(node),
+                             "corner": _si(corner, "Hz") if corner else "-",
+                             "gain": f"{db[-1]:.1f} dB",
+                             "phase": f"{np.angle(values[-1], deg=True):.1f}°"})
+
+    currents = []
+    for vector, current in result["currents"].items():
+        if vector.endswith("#branch"):
+            label = name(vector[:-len("#branch")])
+        else:
+            element, _, terminal = vector[1:].rstrip("]").partition("[")
+            label = name(element) if terminal == "i" else f"{name(element)} {terminal}"
+        if analysis == "tran":
+            time = sweep["axis"]
+            rms = np.sqrt(np.trapezoid(current ** 2, time) / (time[-1] - time[0]))
+            currents.append({"name": label, "max": _si(np.abs(current).max(), "A"),
+                             "eff": _si(rms, "A")})
+        else:
+            currents.append({"name": label, "value": _si(current[0], "A")})
+
+    if result["validation_failed"]:
+        status = "invalid"
+    elif result["success"]:
+        status = "ok"
+    else:
+        status = "failed"
+    return {"status": status, "summary": _summary(result), "voltages": voltages,
+            "currents": currents, "errors": result["errors"], "warnings": result["warnings"]}
 
 
 def _format_currents(result):
     """Report lines for the currents: .op value, .tran peak and RMS."""
-    currents = {name: data for name, data in result["currents"].items()
-                if data.size and np.abs(data).max() > 1e-12}
+    currents = result["currents"]
     if not currents:
         return []
 
-    trapezoid = getattr(np, "trapezoid", None)
-
     lines = ["", "Ströme (positiv = in den Anschluss hinein; negativer Quellenstrom = Quelle liefert):"]
-    for name, current in sorted(currents.items()):
+    for name, current in currents.items():
         if result["analysis"] == "tran":
             time = result["sweep"]["axis"]
-            rms = np.sqrt(trapezoid(current ** 2, time) / (time[-1] - time[0]))
+            rms = np.sqrt(np.trapezoid(current ** 2, time) / (time[-1] - time[0]))
             lines.append(f"  {name}: max {_si(np.abs(current).max(), 'A')}, eff {_si(rms, 'A')}")
         else:
             lines.append(f"  {name} = {_si(current[0], 'A')}")
@@ -226,19 +312,7 @@ def _format_currents(result):
 def format_result(result: dict) -> str:
     """Render a run_deck() result as a short human-readable report."""
     sweep = result["sweep"]
-    lines = []
-    if result["validation_failed"]:
-        lines.append("Validierung FEHLGESCHLAGEN - ngspice wurde nicht gestartet.")
-    elif not result["success"]:
-        lines.append("Simulation FEHLGESCHLAGEN.")
-    elif result["analysis"] == "ac":
-        lines.append(f"Simulation OK (Frequenzgang {_si(sweep['axis'][0], 'Hz')} - "
-                     f"{_si(sweep['axis'][-1], 'Hz')}).")
-    elif result["analysis"] == "tran":
-        lines.append(f"Simulation OK (Zeitverlauf {_si(sweep['axis'][0], 's')} - "
-                     f"{_si(sweep['axis'][-1], 's')}, {len(sweep['axis'])} Punkte).")
-    else:
-        lines.append("Simulation OK (Arbeitspunkt gelöst).")
+    lines = [_summary(result)]
 
     if result["voltages"]:
         lines.append("")
@@ -252,22 +326,14 @@ def format_result(result: dict) -> str:
         lines += ["", "Frequenzgang (Betrag / Phase):"]
 
         for node, values in sorted(sweep["nodes"].items()):
-            mag = np.abs(values)
-            if not mag.any():
+            if not np.abs(values).any():
                 lines.append(f"  {node}: kein AC-Anteil")
                 continue
 
-            db = 20 * np.log10(np.maximum(mag, 1e-30))
-            below = np.nonzero(db < db[0] - 3)[0]
+            db = 20 * np.log10(np.maximum(np.abs(values), 1e-30))
+            corner = _corner_frequency(freqs, db)
+            lines.append(f"  {node}" + (f"  (-3 dB bei {_si(corner, 'Hz')})" if corner else ""))
 
-            corner = ""
-            if below.size and below[0] > 0:
-                i = below[0]
-
-                lf = np.interp(db[0] - 3, [db[i], db[i - 1]], np.log10([freqs[i], freqs[i - 1]]))
-                corner = f"  (-3 dB bei {_si(10 ** lf, 'Hz')})"
-            lines.append(f"  {node}{corner}")
-            
             for f in decades:
                 i = int(np.argmin(np.abs(np.log10(freqs) - np.log10(f))))
                 lines.append(f"      {_si(freqs[i], 'Hz'):>9}  {db[i]:7.1f} dB  "
