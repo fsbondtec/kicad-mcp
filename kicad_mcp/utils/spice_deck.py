@@ -228,7 +228,7 @@ def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, anal
     Returns:
         the deck text as a string.
     """
-    lines = [title]
+    lines = [title, ".options savecurrents"]   
 
     lines.extend(includes or [])
     lines.extend(models or [])
@@ -284,7 +284,7 @@ def validate_deck(deck: str) -> dict:
     value_re = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?[a-z]*$", re.I)
 
     directives = [l.split() for l in lines if l.startswith(".") and l.split()[0].lower()
-                  not in (".title", ".include", ".lib", ".model", ".subckt", ".ends", ".end")]
+                  not in (".title", ".options", ".include", ".lib", ".model", ".subckt", ".ends", ".end")]
     
     analysis = directives[0][0].lower() if directives else None
     params = directives[0][1:] if directives else []

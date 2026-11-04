@@ -56,8 +56,7 @@ def _plot_svg(ngspice, analysis, nodes, warnings, max_nodes=8):
     Returns:
         the SVG markup, or None if there is nothing to draw or the plot failed.
     """
-    # flat curves are left out: .ac by magnitude, .tran by the signed voltage
-    # (the magnitude of a square wave between -5 V and +5 V would look flat)
+    
     shown = sorted(n for n, data in nodes.items()
                    if np.ptp(np.abs(data) if analysis == "ac" else data.real) > 1e-12)
     if not shown:
@@ -98,12 +97,13 @@ def run_deck(deck: str) -> dict:
           voltages (dict)     - .op: {node: volts}.
           sweep (dict)        - .ac / .tran: {"axis": frequencies or times,
                                 "nodes": {node: values}} (complex for .ac).
+          currents (dict)     - .op / .tran: {ngspice vector name: amperes} of the top-level elements.
           svg (str)           - .ac / .tran: diagram drawn by ngspice, None otherwise.
           errors (list[str])  - validation errors, fatal ngspice messages / exceptions.
           warnings (list[str])- validation warnings and non-fatal ngspice messages.
     """
     out = {"success": False, "validation_failed": False, "analysis": None, "voltages": {},
-           "sweep": None, "svg": None, "errors": [], "warnings": []}
+           "sweep": None, "currents": {}, "svg": None, "errors": [], "warnings": []}
 
     check = validate_deck(deck)
     out["warnings"] += check["warnings"]
@@ -162,6 +162,10 @@ def run_deck(deck: str) -> dict:
                 axis = "frequency" if out["analysis"] == "ac" else "time"
                 out["sweep"] = {"axis": np.asarray(plot[axis]._data).real, "nodes": nodes}
                 out["svg"] = _plot_svg(ngspice, out["analysis"], nodes, out["warnings"])
+            if out["analysis"] != "ac":
+                out["currents"] = {name: np.asarray(vec._data).real for name, vec in plot.items()
+                                   if (name.startswith("@") or vec.is_branch_current)
+                                   and "." not in name}
 
             ngspice.remove_circuit()
             out["success"] = True
@@ -197,6 +201,26 @@ def _si(value, unit):
         if abs(value) >= factor:
             return f"{value / factor:.3g} {prefix}{unit}"
     return f"{value * 1e12:.3g} p{unit}"
+
+
+def _format_currents(result):
+    """Report lines for the currents: .op value, .tran peak and RMS."""
+    currents = {name: data for name, data in result["currents"].items()
+                if data.size and np.abs(data).max() > 1e-12}
+    if not currents:
+        return []
+
+    trapezoid = getattr(np, "trapezoid", None)
+
+    lines = ["", "Ströme (positiv = in den Anschluss hinein; negativer Quellenstrom = Quelle liefert):"]
+    for name, current in sorted(currents.items()):
+        if result["analysis"] == "tran":
+            time = result["sweep"]["axis"]
+            rms = np.sqrt(trapezoid(current ** 2, time) / (time[-1] - time[0]))
+            lines.append(f"  {name}: max {_si(np.abs(current).max(), 'A')}, eff {_si(rms, 'A')}")
+        else:
+            lines.append(f"  {name} = {_si(current[0], 'A')}")
+    return lines
 
 
 def format_result(result: dict) -> str:
@@ -255,6 +279,8 @@ def format_result(result: dict) -> str:
             values = values.real
             lines.append(f"  {node}: min {_si(values.min(), 'V')}, max {_si(values.max(), 'V')}, "
                          f"Ende {_si(values[-1], 'V')}")
+
+    lines += _format_currents(result)
 
     if result["errors"]:
         lines.append("")
