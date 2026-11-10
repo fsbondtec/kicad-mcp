@@ -5,18 +5,11 @@ kicad-cli, filters it to the block, assembles the runnable deck and validates it
 
 import re
 import sys
-import threading
 from collections import defaultdict
 
 from kicad_mcp.utils.cli_drc import export_netlist
 from kicad_mcp.utils.file_utils import hash_schematic
-
-
-# Cache of kicad-cli SPICE exports
-_SPICE_EXPORT_CACHE: dict = {}
-
-# wait for the running export and then hit the cache
-_SPICE_EXPORT_LOCK = threading.Lock()
+from kicad_mcp.utils.schematic_cache import CACHE_LOCK, get_entry
 
 
 class SpiceNetlistParser:
@@ -32,35 +25,38 @@ class SpiceNetlistParser:
         self.elements = []
         self.export_error = None    
 
-    def export_spice(self):
-        """Export the SPICE netlist via kicad-cli.
+    def export_spice(self, schematic_hash: str = None):
+        """Get the SPICE netlist of the schematic, exported via kicad-cli only if the
+        cached one was made from an older schematic state.
 
-        A successful export is cached per schematic (keyed by file hash) so repeated runs reuse it 
+        Args:
+            schematic_hash: hash_schematic() of the schematic if the caller already has it.
         """
         self.export_error = None
-        with _SPICE_EXPORT_LOCK:
-            self._export_spice_locked()
+        if schematic_hash is None:
+            try:
+                schematic_hash = hash_schematic(self.schematic_path)
+            except OSError as e:
+                self.export_error = f"Schaltplan nicht lesbar: {e}"
+                return
 
-    def _export_spice_locked(self):
-        try:
-            current_hash = hash_schematic(self.schematic_path)
-        except OSError as e:
-            self.export_error = f"Schaltplan nicht lesbar: {e}"
-            return
+        with CACHE_LOCK:
+            entry = get_entry(self.schematic_path)
+            spice_is_current = (entry["spice"] is not None
+                                and entry["spice_schematic_hash"] == schematic_hash)
+            if spice_is_current:
+                self.spice = entry["spice"]
+                return
 
-        cached = _SPICE_EXPORT_CACHE.get(self.schematic_path)
-        if cached and cached["hash"] == current_hash:
-            self.spice = cached["spice"]
-            return
+            spice, error = export_netlist(self.schematic_path, "spice")
+            if error:
+                self.export_error = error
+                print(error, file=sys.stderr)
+                return
 
-        spice, error = export_netlist(self.schematic_path, "spice")
-        if error:
-            self.export_error = error
-            print(error, file=sys.stderr)
-            return
-
-        self.spice = spice
-        _SPICE_EXPORT_CACHE[self.schematic_path] = {"hash": current_hash, "spice": spice}
+            entry["spice"] = spice
+            entry["spice_schematic_hash"] = schematic_hash
+            self.spice = spice
 
     def parse(self):
         """

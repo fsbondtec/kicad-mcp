@@ -40,11 +40,18 @@ def _grow_block(project_path, schematic_path, seed_components):
     from kicad_mcp.tools.graph_tools import get_data
     from kicad_mcp.utils.block_analysis import select_block
     from kicad_mcp.utils.spice_deck import SpiceNetlistParser
+    from kicad_mcp.utils.file_utils import hash_schematic
 
     seeds = [s.strip() for s in (seed_components or "").split(",") if s.strip()]
-    graph, _ = get_data(project_path, schematic_path)
+
+    try:
+        schematic_hash = hash_schematic(schematic_path)
+    except OSError as e:
+        return None, None, {"success": False, "error": f"Schaltplan nicht lesbar: {e}"}
+
+    graph, _ = get_data(project_path, schematic_path, schematic_hash)
     sp = SpiceNetlistParser(schematic_path)
-    sp.export_spice()
+    sp.export_spice(schematic_hash)
     if not sp.spice:
         return graph, sp, {"success": False,
                            "error": sp.export_error or "SPICE-Export fehlgeschlagen"}
