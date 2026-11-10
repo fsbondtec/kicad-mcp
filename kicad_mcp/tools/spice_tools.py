@@ -128,8 +128,7 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
     Returns: deck is the SPICE text, or None with an error
     message; warnings are the block pre-checks.
     """
-    from kicad_mcp.utils.block_analysis import block_warnings
-    from kicad_mcp.utils.block_analysis import reference_net as find_reference_net
+    from kicad_mcp.utils.block_analysis import block_warnings, ground_nets
     from kicad_mcp.utils.spice_deck import build_isolated_deck, build_net_node_map, node_count
 
     # the ports come from the UI, only the block itself is rebuilt
@@ -138,7 +137,8 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
         return None, f"Fehler: {block['error']}", []
 
     rails = block["global_nets_touched"]
-    reference_net = reference_net or find_reference_net(rails)
+    grounds = ground_nets(rails)
+    reference_net = reference_net or (grounds[0] if grounds else None)
     if rails and reference_net is None:
         return None, (
             "Fehler: kein Massenetz (GND) im Block - bitte in der UI ein Bezugsnetz waehlen."
@@ -155,6 +155,14 @@ def _assemble_deck(project_path: str, schematic_path: str, seed_components: str,
         ), []
 
     warnings = block_warnings(block)
+   
+    unpowered = [r for r in rails
+                 if r != reference_net and r not in grounds and r not in supply_nodes]
+    if unpowered:
+        warnings.append(
+            f"Keine Quelle an {', '.join(unpowered)} - diese Netze liegen nicht auf ihrer "
+            "Spannung, sondern haengen nur an den Bauteilen des Blocks."
+        )
 
     # KiCad renames nets in the SPICE export ('Net-(D1-A)' -> 'Net-_D1-A_')
     net_map = build_net_node_map(graph.netlist_data["nets"], sp.elements)
@@ -256,16 +264,18 @@ def _field(label, name, placeholder=""):
         Input(name=name, placeholder=placeholder)
 
 
-def _source_fields(prefix, state, dc=""):
-    """Type selection and the fields of one independent source (supply or input port).
+def _source_fields(prefix, state, dc="", dc_placeholder=None, ac=""):
+    """Type selection and the fields of one independent source (supply or input port)
 
     Returns:
         {field: STATE reference} for run_simulation, turned into text by _source_spec.
     """
-    for key in _SOURCE_KEYS:
-        state[f"{prefix}_{key}"] = ""
+    for fields in _SOURCE_FIELDS.values():
+        for key, _, example in fields:
+            state[f"{prefix}_{key}"] = "" if example == "optional" else example
     state[f"{prefix}_type"] = "DC"
     state[f"{prefix}_dc"] = dc
+    state[f"{prefix}_ac"] = ac
 
     with Grid(minColumnWidth="6rem", gap=2, align="end"):
         with Column(gap=1):
@@ -277,10 +287,45 @@ def _source_fields(prefix, state, dc=""):
         for kind, fields in _SOURCE_FIELDS.items():
             with If(f"{prefix}_type == '{kind}'"):
                 for key, label, placeholder in fields:
+                    if key == "dc" and dc_placeholder:
+                        placeholder = dc_placeholder
                     _field(label, f"{prefix}_{key}", placeholder)
-        _field("AC-Amplitude", f"{prefix}_ac", "nur für .ac")
+        with If("analysis == '.ac'"):
+            _field("AC-Amplitude", f"{prefix}_ac", "leer = kein AC")
 
     return {key: getattr(STATE, f"{prefix}_{key}") for key in _SOURCE_KEYS}
+
+
+def _analysis_card():
+    """Analysis selection with the .ac / .tran parameter fields."""
+    with Card():
+        with CardHeader():
+            CardTitle("Analyse")
+        with CardContent():
+            with Column(gap=3):
+                with Select(name="analysis"):
+                    SelectOption(value=".op", label="Arbeitspunkt (.op)")
+                    SelectOption(value=".ac", label="Frequenzgang (.ac) - braucht AC-Amplitude")
+                    SelectOption(value=".tran", label="Zeitverlauf (.tran)")
+                with If("analysis == '.ac'"):
+                    with Grid(columns=4, gap=2, align="end"):
+                        with Column(gap=1):
+                            Label("Verlauf")
+                            with Select(name="ac_sweep"):
+                                SelectOption(value="dec", label="dec - pro Dekade")
+                                SelectOption(value="oct", label="oct - pro Oktave")
+                                SelectOption(value="lin", label="lin - gesamt")
+                        _field("Punkte", "ac_points", "20")
+                        _field("Startfrequenz", "ac_fstart", "1")
+                        _field("Stoppfrequenz", "ac_fstop", "1Meg")
+                with If("analysis == '.tran'"):
+                    with Grid(columns=4, gap=2, align="end"):
+                        _field("Schrittweite", "tran_step", "1u")
+                        _field("Endzeit", "tran_stop", "5m")
+                        _field("Startzeit", "tran_start", "optional")
+                        _field("Max. Schritt", "tran_max", "optional")
+                    Checkbox(name="tran_uic",
+                             label="Einschalten simulieren, alle C/L starten bei 0 (UIC)")
 
 
 _RESULT_KEYS = ["status", "summary", "analysis", "voltages", "currents", "errors", "warnings",
@@ -357,6 +402,11 @@ def run_simulation(project_path: str, schematic_path: str, seed_components: str,
     """
     from kicad_mcp.utils.spice_runner import run_deck, format_result, result_tables
 
+    if analysis.get("analysis") != ".ac":
+        for item in (ports or []) + (supplies or []):
+            if item.get("source"):
+                item["source"] = {**item["source"], "ac": ""}
+
     ports = [{"net": p["net"], "role": p.get("role"), "value": _port_value(p)} for p in ports or []]
     supplies = [{"net": s["net"], "value": _source_spec(s.get("source") or {})}
                 for s in supplies or []]
@@ -387,13 +437,12 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
     which assembles, validates and runs the isolated deck and shows the result
     together with the deck.
     """
-    from kicad_mcp.utils.block_analysis import block_warnings, guess_voltage, reference_net
+    from kicad_mcp.utils.block_analysis import block_warnings, ground_nets, guess_voltage
 
     graph, block, ports = _select_ports(project_path, schematic_path, seed_components)
 
     rails = block.get("global_nets_touched", [])
-    needs_reference = bool(rails) and reference_net(rails) is None
-    supply_rails = [r for r in rails if r != reference_net(rails)]
+    grounds = ground_nets(rails)
 
     with Column(gap=4) as view:
         H3("Simulation des Blocks festlegen")
@@ -403,7 +452,7 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
 
         state = {"sim_status": "", "sim_summary": "", "sim_analysis": "", "sim_deck": "",
                  "sim_svg": "", "sim_voltages": [], "sim_currents": [], "sim_errors": [],
-                 "sim_warnings": [], "reference_net": "",
+                 "sim_warnings": [], "reference_net": grounds[0] if grounds else "",
                  **_ANALYSIS_DEFAULTS}
 
         hints = [f"Hinweis: {warning}" for warning in block_warnings(block)]
@@ -442,28 +491,32 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
                         for hint in hints:
                             Muted(hint)
 
+        _analysis_card()
+
         args_supplies = []
-        if needs_reference or supply_rails:
+        if rails:
             with Card():
                 with CardHeader():
                     CardTitle("Versorgung")
                 with CardContent():
                     with Column(gap=3):
-                        if needs_reference:
-                            with Row(gap=3, align="center"):
-                                Label("Masse (Knoten 0)")
-                                with Select(name="reference_net", placeholder="Bezugsnetz waehlen"):
-                                    for rail in rails:
-                                        SelectOption(value=rail, label=rail)
-                        for i, rail in enumerate(supply_rails):
+                        with Row(gap=3, align="center"):
+                            Label("Masse (Knoten 0)")
+                            with Select(name="reference_net", placeholder="Bezugsnetz waehlen"):
+                                for rail in rails:
+                                    SelectOption(value=rail, label=rail)
+                        for i, rail in enumerate(rails):
                             voltage = guess_voltage(rail)
+                            several = len(grounds) > 1 and rail in grounds
+                            hint = "0 = verbunden, leer = getrennt" if several else None
                             quoted = rail.replace("\\", "\\\\").replace("'", "\\'")
                             with If(f"reference_net != '{quoted}'"):
                                 Text(rail)
                                 source = _source_fields(f"supply_{i}", state,
-                                                        f"{voltage:g}" if voltage is not None else "")
+                                                        f"{voltage:g}" if voltage is not None else "",
+                                                        dc_placeholder=hint)
                             args_supplies.append({"net": rail, "source": source})
-                        if supply_rails:
+                        if len(rails) > 1:      
                             Muted("Spannung leer lassen = keine Quelle an diesem Netz.")
 
         args_ports = []
@@ -491,7 +544,7 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
                             Muted(f"Aussen: {', '.join(p['outside_pins'])}")
 
                             with If(f"role_{i} == 'input'"):
-                                source = _source_fields(f"port_{i}", state, "5")
+                                source = _source_fields(f"port_{i}", state, "5", ac="1")
                             with If(f"role_{i} == 'load'"):
                                 with Grid(minColumnWidth="6rem", gap=2, align="end"):
                                     with Column(gap=1):
@@ -509,35 +562,6 @@ def open_spice_simulation(project_path: str, schematic_path: str, seed_component
                                 "load_type": getattr(STATE, f"load_type_{i}"),
                                 "load_value": getattr(STATE, f"load_value_{i}"),
                             })
-
-        with Card():
-            with CardHeader():
-                CardTitle("Analyse")
-            with CardContent():
-                with Column(gap=3):
-                    with Select(name="analysis"):
-                        SelectOption(value=".op", label="Arbeitspunkt (.op)")
-                        SelectOption(value=".ac", label="Frequenzgang (.ac) - braucht AC-Amplitude")
-                        SelectOption(value=".tran", label="Zeitverlauf (.tran)")
-                    with If("analysis == '.ac'"):
-                        with Grid(columns=4, gap=2, align="end"):
-                            with Column(gap=1):
-                                Label("Verlauf")
-                                with Select(name="ac_sweep"):
-                                    SelectOption(value="dec", label="dec - pro Dekade")
-                                    SelectOption(value="oct", label="oct - pro Oktave")
-                                    SelectOption(value="lin", label="lin - gesamt")
-                            _field("Punkte", "ac_points", "20")
-                            _field("Startfrequenz", "ac_fstart", "1")
-                            _field("Stoppfrequenz", "ac_fstop", "1Meg")
-                    with If("analysis == '.tran'"):
-                        with Grid(columns=4, gap=2, align="end"):
-                            _field("Schrittweite", "tran_step", "1u")
-                            _field("Endzeit", "tran_stop", "5m")
-                            _field("Startzeit", "tran_start", "optional")
-                            _field("Max. Schritt", "tran_max", "optional")
-                        Checkbox(name="tran_uic",
-                                 label="Einschalten simulieren, alle C/L starten bei 0 (UIC)")
 
         call_args = {
             "project_path": project_path,

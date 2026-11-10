@@ -191,9 +191,9 @@ def suggest_port_role(port: dict) -> dict:
     return {"role": "output", "clarify": True}
 
 
-def reference_net(rails):
-    """Return the ground net among the touched rails, or None if there is none."""
-    return next((n for n in rails if "GND" in n.upper()), None)
+def ground_nets(rails):
+    """The touched rails that look like a ground net """
+    return [n for n in rails if "GND" in n.upper()]
 
 
 def block_warnings(block):
@@ -201,7 +201,7 @@ def block_warnings(block):
     
     Returns:
         list of messages: block truncated, nets not followed (high fan-out), open pins,
-        rails without a recognisable voltage.
+        more than one ground net. 
     """
     warnings = []
     if block.get("truncated"):
@@ -219,12 +219,11 @@ def block_warnings(block):
             f"Offener Pin: {d['pin']['component']} Pin {d['pin']['pin']} an Netz {d['net']}."
         )
     rails = block["global_nets_touched"]
-    reference = reference_net(rails)
-    unknown = [r for r in rails if r != reference and guess_voltage(r) is None]
-    if unknown:
+    grounds = ground_nets(rails)
+    if len(grounds) > 1:
         warnings.append(
-            f"Keine Spannung erkennbar fuer {', '.join(unknown)} - "
-            "ohne Eintrag in der UI bekommen diese Netze keine Quelle."
+            f"Mehrere Massenetze ({', '.join(grounds)}), Bezugsnetz pruefen. Bei den "
+            "uebrigen 0 eintragen = mit Masse verbunden, leer lassen = getrennt."
         )
     return warnings
 

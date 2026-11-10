@@ -151,7 +151,7 @@ def run_deck(deck: str) -> dict:
             plot = ngspice.plot(None, plot_name)
 
             subckts = {l.split()[0].lower() for l in deck.splitlines() if l[:1] in ("X", "x")}
-            nodes = {name: np.asarray(vec._data) for name, vec in plot.items()
+            nodes = {name: np.array(vec.to_waveform()) for name, vec in plot.items()
                      if vec.is_voltage_node and name.split(".")[0] not in subckts}
             
             if out["analysis"] not in ("op", "ac", "tran") or any(d.size == 0 for d in nodes.values()):
@@ -161,10 +161,10 @@ def run_deck(deck: str) -> dict:
                 out["voltages"] = {name: float(data[0].real) for name, data in nodes.items()}
             else:
                 axis = "frequency" if out["analysis"] == "ac" else "time"
-                out["sweep"] = {"axis": np.asarray(plot[axis]._data).real, "nodes": nodes}
+                out["sweep"] = {"axis": np.array(plot[axis].to_waveform()).real, "nodes": nodes}
                 out["svg"] = _plot_svg(ngspice, out["analysis"], nodes, out["warnings"])
             if out["analysis"] != "ac":
-                currents = {name: np.asarray(vec._data).real for name, vec in plot.items()
+                currents = {name: np.array(vec.to_waveform()).real for name, vec in plot.items()
                             if (name.startswith("@") or vec.is_branch_current) and "." not in name}
                 out["currents"] = {name: data for name, data in sorted(currents.items())
                                    if data.size and np.abs(data).max() > 1e-12}
