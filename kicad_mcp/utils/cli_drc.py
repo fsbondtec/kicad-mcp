@@ -123,3 +123,52 @@ def kicad_cli_env() -> Dict[str, str]:
     config_dir = os.path.join(tempfile.gettempdir(), "kicad-mcp", "kicad-config")
     os.makedirs(config_dir, exist_ok=True)
     return {**os.environ, "KICAD_CONFIG_HOME": config_dir}
+
+
+KICAD_CLI_NOT_FOUND = (
+    "kicad-cli nicht gefunden. KiCad 9.0+ installiert bzw. KICAD_APP_PATH korrekt gesetzt?"
+)
+
+
+def export_netlist(schematic_path: str, netlist_format: str):
+    """Export the schematic's netlist with kicad-cli.
+
+    Args:
+        schematic_path: root .kicad_sch file.
+        netlist_format: kicad-cli format, e.g. 'kicadsexpr' or 'spice'.
+
+    Returns:
+        (text, error): text is the file content whenever kicad-cli wrote the file,
+        error describes a failed run or a missing file, otherwise None.
+    """
+    
+    kicad_cli = find_kicad_cli()
+    if not kicad_cli:
+        return None, KICAD_CLI_NOT_FOUND
+
+    text = None
+    error = None
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_file = os.path.join(temp_dir, "netlist")
+        cmd = [kicad_cli, "sch", "export", "netlist", "--format", netlist_format,
+               "--output", output_file, schematic_path]
+        try:
+            process = subprocess.run(cmd, capture_output=True, text=True,
+                                     stdin=subprocess.DEVNULL, env=kicad_cli_env())
+        except OSError as e:
+            return None, f"kicad-cli konnte nicht gestartet werden: {e}"
+
+        if process.returncode != 0:
+            details = process.stderr.strip()
+            if not details:
+                details = "keine Fehlerausgabe"
+            error = (f"kicad-cli-Export ({netlist_format}) fehlgeschlagen "
+                     f"(Code {process.returncode}): {details}")
+
+        if os.path.exists(output_file):
+            with open(output_file, "r", encoding="latin-1") as f:
+                text = f.read()
+        elif error is None:
+            error = "kicad-cli meldete Erfolg, aber die Netlist-Datei wurde nicht erzeugt."
+
+    return text, error

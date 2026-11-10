@@ -11,7 +11,7 @@ import threading
 
 import numpy as np
 
-from kicad_mcp.utils.cli_drc import find_kicad_cli
+from kicad_mcp.utils.cli_drc import KICAD_CLI_NOT_FOUND, find_kicad_cli
 from kicad_mcp.utils.spice_deck import validate_deck
 
 # So two overlapping runs cannot crash ngspice which would kill the server process.
@@ -122,10 +122,7 @@ def run_deck(deck: str) -> dict:
         return out
 
     if bin_dir is None:
-        out["errors"].append(
-            "kicad-cli/ngspice nicht gefunden. Ist KiCad 9.0+ installiert bzw. "
-            "KICAD_APP_PATH korrekt gesetzt?"
-        )
+        out["errors"].append(KICAD_CLI_NOT_FOUND)
         return out
 
     from PySpice.Spice.NgSpice.Shared import NgSpiceCommandError, NgSpiceShared

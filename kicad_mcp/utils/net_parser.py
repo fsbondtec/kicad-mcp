@@ -1,10 +1,7 @@
 import sexpdata
-import os
 import sys
-import subprocess
-import tempfile
 
-from kicad_mcp.utils.cli_drc import find_kicad_cli, kicad_cli_env
+from kicad_mcp.utils.cli_drc import export_netlist
 
 def sexp_children(node, tag):
     """Return every child of `node` whose head symbol equals `tag`."""
@@ -42,44 +39,10 @@ class NetlistParser:
         self.netlist = None
 
     def export_netlist(self):
-        """
-        Exports the schematic to a temporary KiCad s-expression netlist file
-        """
-        try:
-            with tempfile.TemporaryDirectory() as temp_dir:
-                output_file = os.path.join(temp_dir, "netlist.net")
-
-                kicad_cli = find_kicad_cli()
-                if not kicad_cli:
-                    raise FileNotFoundError(
-                        "kicad-cli not found. Ensure KiCad 9.0+ is installed and in PATH."
-                    )
-
-                cmd = [
-                    kicad_cli,
-                    "sch",
-                    "export",
-                    "netlist",
-                    "--format",
-                    "kicadsexpr",
-                    "--output",
-                    output_file,
-                    self.schematic_path,
-                ]
-
-                process = subprocess.run(cmd, capture_output=True, text=True, env=kicad_cli_env())
-
-                if process.returncode != 0:
-                    print(f"Netlist export failed: {process.stderr.strip()}", file=sys.stderr)
-
-                if os.path.exists(output_file):
-                    with open(output_file, "r", encoding="latin-1") as f:
-                        self.netlist = f.read()
-                else:
-                    print("Output file does not exist", file=sys.stderr)
-
-        except Exception as e:
-            print(f"Error during netlist export: {str(e)}", file=sys.stderr)
+        """Export the schematic as KiCad s-expression netlist into self.netlist."""
+        self.netlist, error = export_netlist(self.schematic_path, "kicadsexpr")
+        if error:
+            print(f"Netlist export: {error}", file=sys.stderr)
 
     def structure_data(self):
         """

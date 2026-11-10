@@ -3,15 +3,12 @@ Builds an isolated SPICE deck for a block: exports the schematic's SPICE netlist
 kicad-cli, filters it to the block, assembles the runnable deck and validates it.
 """
 
-import os
 import re
 import sys
-import subprocess
-import tempfile
 import threading
 from collections import defaultdict
 
-from kicad_mcp.utils.cli_drc import find_kicad_cli, kicad_cli_env
+from kicad_mcp.utils.cli_drc import export_netlist
 from kicad_mcp.utils.file_utils import hash_schematic
 
 
@@ -56,60 +53,14 @@ class SpiceNetlistParser:
             self.spice = cached["spice"]
             return
 
-        try:
-            with tempfile.TemporaryDirectory() as temp_dir:
-                output_file = os.path.join(temp_dir, "netlist.cir")
+        spice, error = export_netlist(self.schematic_path, "spice")
+        if error:
+            self.export_error = error
+            print(error, file=sys.stderr)
+            return
 
-                kicad_cli = find_kicad_cli()
-                if not kicad_cli:
-                    self.export_error = (
-                        "kicad-cli nicht gefunden. KiCad 9.0+ installiert bzw. "
-                        "KICAD_APP_PATH korrekt gesetzt?"
-                    )
-                    print(self.export_error, file=sys.stderr)
-                    return
-
-                cmd = [
-                    kicad_cli,
-                    "sch",
-                    "export",
-                    "netlist",
-                    "--format",
-                    "spice",
-                    "--output",
-                    output_file,
-                    self.schematic_path,
-                ]
-
-                process = subprocess.run(
-                    cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL,
-                    env=kicad_cli_env(),
-                )
-
-                if process.returncode != 0:
-                    self.export_error = (
-                        f"kicad-cli SPICE-Export fehlgeschlagen (Code {process.returncode}): "
-                        f"{process.stderr.strip() or 'keine Fehlerausgabe'}"
-                    )
-                    print(f"SPICE export failed: {self.export_error}", file=sys.stderr)
-                    return
-
-                if os.path.exists(output_file):
-                    with open(output_file, "r", encoding="latin-1") as f:
-                        self.spice = f.read()
-                    _SPICE_EXPORT_CACHE[self.schematic_path] = {
-                        "hash": current_hash,
-                        "spice": self.spice,
-                    }
-                else:
-                    self.export_error = (
-                        "kicad-cli meldete Erfolg, aber die Netlist-Datei wurde nicht erzeugt."
-                    )
-                    print(self.export_error, file=sys.stderr)
-
-        except Exception as e:
-            self.export_error = f"Ausnahme beim SPICE-Export: {e}"
-            print(self.export_error, file=sys.stderr)
+        self.spice = spice
+        _SPICE_EXPORT_CACHE[self.schematic_path] = {"hash": current_hash, "spice": spice}
 
     def parse(self):
         """
