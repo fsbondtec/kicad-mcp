@@ -2,11 +2,11 @@ import difflib
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
-from kicad_mcp.utils.kicad_cli import *
-from kicad_mcp.utils.cli_drc import find_kicad_cli
+from kicad_mcp.utils.cli_drc import KICAD_CLI_NOT_FOUND, find_kicad_cli
 from kiutils.board import Board
 
 
@@ -28,7 +28,7 @@ def plot_svg_schematic(project_path: str):
     """
     cli_path = find_kicad_cli()
     if not cli_path:
-        print("Error searching for cli", file=sys.stderr)
+        print(KICAD_CLI_NOT_FOUND, file=sys.stderr)
         return
 
     base_path, _ = os.path.splitext(project_path)
@@ -61,11 +61,10 @@ def plot_svg_pcb(project_path: str):
     """
     Exports the PCB's copper layers to SVG via kicad-cli and returns the output path.
     """
-    try:
-        cli_path = get_kicad_cli_path(required=True)
-    except KiCadCLIError as e:
-        print("Error searching for cli")
-        return
+    cli_path = find_kicad_cli()
+    if not cli_path:
+        print(KICAD_CLI_NOT_FOUND, file=sys.stderr)
+        return None
     
     base_path, _ = os.path.splitext(project_path)
     main_sch_path = f"{base_path}.kicad_pcb"
@@ -90,8 +89,8 @@ def plot_svg_pcb(project_path: str):
         subprocess.run(cmd, check=True, capture_output=True, text=True)
         return output_svg
     except subprocess.CalledProcessError as e:
-        print("error when plotting")
-        print(e.stderr if e.stderr else e.stdout)
+        print("error when plotting", file=sys.stderr)
+        print(e.stderr if e.stderr else e.stdout, file=sys.stderr)
         return None
 
 

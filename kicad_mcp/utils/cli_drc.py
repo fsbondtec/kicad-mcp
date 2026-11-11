@@ -33,10 +33,7 @@ async def run_drc_via_cli(pcb_file: str) -> Dict[str, Any]:
             kicad_cli = find_kicad_cli()
 
             if not kicad_cli:
-                print("kicad-cli not found in PATH or common installation locations")
-                results["error"] = (
-                    "kicad-cli not found. Please ensure KiCad 9.0+ is installed and kicad-cli is available."
-                )
+                results["error"] = KICAD_CLI_NOT_FOUND
                 return results
             
             # Build the DRC command
