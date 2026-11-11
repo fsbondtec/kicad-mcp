@@ -9,53 +9,10 @@ from typing import Dict, Any
 from fastmcp import FastMCP
 from fastmcp.apps import AppConfig
 
-from kicad_mcp.utils.net_parser import NetlistParser
-from kicad_mcp.utils.graph_analysis import CircuitGraph
 from kicad_mcp.utils.svg_utils import draw_path_to_svg, build_svg_map_from_project_files, plot_svg_schematic, plot_svg_pcb, draw_path_to_pcb_svg
-from kicad_mcp.utils.file_utils import get_project_files, find_component_sheets, hash_schematic
+from kicad_mcp.utils.file_utils import get_project_files, find_component_sheets
 from kicad_mcp.utils.svg_file_server import IMAGE_VIEW_URI, FILE_SERVER_PORT, start_or_update_file_server
-from kicad_mcp.utils.schematic_cache import CACHE_LOCK, get_entry
-
-
-def get_data(project_path: str, schematic_path: str,
-             schematic_hash: str = None) -> tuple[CircuitGraph, Dict]:
-    """
-    Get the cached circuit graph or build a new one if the schematic has changed.
-
-    This function parses the KiCad schematic into a structured format and builds a
-    logical CircuitGraph. If the schematic hasn't changed, the cached graph is
-    returned immediately.
-
-    Args:
-        project_path (str): Absolute or relative path to the KiCad project directory.
-        schematic_path (str): Path to the specific KiCad schematic file (.kicad_sch).
-        schematic_hash (str): hash_schematic() of the schematic if the caller already has it.
-
-    Returns:
-        tuple[CircuitGraph, Dict]: A tuple containing:
-            - The instantiated CircuitGraph object representing the schematic logic.
-            - A dictionary containing the structured raw data parsed from the netlist.
-    """
-    if schematic_hash is None:
-        schematic_hash = hash_schematic(schematic_path)
-
-    with CACHE_LOCK:
-        entry = get_entry(schematic_path)
-        graph_is_current = (entry["schematic_hash"] == schematic_hash
-                            and entry["project_path"] == project_path)
-        if graph_is_current:
-            return entry["graph"], entry["structured_data"]
-
-        parser = NetlistParser(schematic_path)
-        parser.export_netlist()
-        structured_data = parser.structure_data()
-        graph = CircuitGraph(structured_data, project_path)
-
-        entry["graph"] = graph
-        entry["structured_data"] = structured_data
-        entry["project_path"] = project_path
-        entry["schematic_hash"] = schematic_hash
-        return graph, structured_data
+from kicad_mcp.utils.schematic_cache import get_graph_data
 
 
 def missing_component_error(project_path: str, schematic_path: str, graph, refs: list) -> str:
@@ -127,7 +84,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             if not os.path.exists(schematic_path):
                 return {"success": False, "error": f"Schematic file not found: {schematic_path}"}
 
-            graph, _ = get_data(project_path, schematic_path)
+            graph, _ = get_graph_data(project_path, schematic_path)
 
             if not graph.nodes:
                 return {"success": False, "error": "No components found in schematic"}
@@ -195,7 +152,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": "End component reference cannot be empty"}
 
         try:
-            graph, _ = get_data(project_path, schematic_path)
+            graph, _ = get_graph_data(project_path, schematic_path)
 
 
             path_result = graph.find_path(start_component, end_component, ignore_power, max_depth)
@@ -272,7 +229,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": "Start component reference cannot be empty"}
 
         try:
-            graph, _ = get_data(project_path, schematic_path)
+            graph, _ = get_graph_data(project_path, schematic_path)
 
 
             path_result = graph.get_neighborhood(center_component, ignore_power, radius)
@@ -354,7 +311,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
         try:
             plot_svg_schematic(project_path)
 
-            graph, _ = get_data(project_path, schematic_path)
+            graph, _ = get_graph_data(project_path, schematic_path)
 
             path_result = graph.find_path_with_wire_segments(
                 start=start_component,

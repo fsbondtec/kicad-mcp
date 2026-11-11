@@ -1,62 +1,37 @@
 """
-Builds an isolated SPICE deck for a block: exports the schematic's SPICE netlist via
-kicad-cli, filters it to the block, assembles the runnable deck and validates it.
+Builds an isolated SPICE deck for a block: grows the block from the seeds, filters the
+schematic's SPICE netlist to the block, assembles the runnable deck and validates it.
 """
 
 import re
-import sys
 from collections import defaultdict
 
-from kicad_mcp.utils.cli_drc import export_netlist
 from kicad_mcp.utils.file_utils import hash_schematic
-from kicad_mcp.utils.schematic_cache import CACHE_LOCK, get_entry
+from kicad_mcp.utils.schematic_cache import get_graph_data, get_spice_netlist
+from kicad_mcp.utils.spice.block import (
+    block_warnings, ground_nets, select_block, suggest_port_role,
+)
+
+# a SPICE number: digits, optional exponent, then letters for the suffix and unit ("4.7k", "1e-6", "100nF", "1Meg")
+SPICE_VALUE_RE = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?[a-z]*$", re.I)
+
+# passive parts
+PASSIVE_DEVICES = frozenset("RCL")
+
+# parts with exactly two nodes and a value or source spec instead of a model name
+TWO_NODE_DEVICES = PASSIVE_DEVICES | frozenset("VIB")
 
 
 class SpiceNetlistParser:
     """
-    Exports a schematic's SPICE netlist via kicad-cli and filters it to the lines of a single block (isolated Spicelist).
+    Parses a schematic's SPICE netlist (kicad-cli export) and filters it to the lines of a single block (isolated Spicelist).
     """
 
-    def __init__(self, schematic_path: str):
-        self.schematic_path = schematic_path
-        self.spice = None
+    def __init__(self, spice: str):
+        self.spice = spice
         self.includes = []
         self.models = {}
         self.elements = []
-        self.export_error = None    
-
-    def export_spice(self, schematic_hash: str = None):
-        """Get the SPICE netlist of the schematic, exported via kicad-cli only if the
-        cached one was made from an older schematic state.
-
-        Args:
-            schematic_hash: hash_schematic() of the schematic if the caller already has it.
-        """
-        self.export_error = None
-        if schematic_hash is None:
-            try:
-                schematic_hash = hash_schematic(self.schematic_path)
-            except OSError as e:
-                self.export_error = f"Schaltplan nicht lesbar: {e}"
-                return
-
-        with CACHE_LOCK:
-            entry = get_entry(self.schematic_path)
-            spice_is_current = (entry["spice"] is not None
-                                and entry["spice_schematic_hash"] == schematic_hash)
-            if spice_is_current:
-                self.spice = entry["spice"]
-                return
-
-            spice, error = export_netlist(self.schematic_path, "spice")
-            if error:
-                self.export_error = error
-                print(error, file=sys.stderr)
-                return
-
-            entry["spice"] = spice
-            entry["spice_schematic_hash"] = schematic_hash
-            self.spice = spice
 
     def parse(self):
         """
@@ -89,7 +64,7 @@ class SpiceNetlistParser:
         if n < 1 or len(e["tokens"]) < n + 2:
             return False
         model = [t for t in e["tokens"][1:] if "=" not in t][-1]
-        return e["name"][:1].upper() in _VALUE_DEVICES or model in self.models or bool(self.includes)
+        return e["name"][:1].upper() in TWO_NODE_DEVICES or model in self.models or bool(self.includes)
 
     def simulatable_refs(self, known_refs):
         """Refs KiCad exported as a complete element
@@ -113,7 +88,7 @@ class SpiceNetlistParser:
             block_components: component references forming the block.
 
         Returns:
-            dict with elements and models.
+            dict with elements (the parsed element dicts: name, tokens, raw) and models.
         """
         wanted = {r.upper() for r in block_components}
 
@@ -126,13 +101,9 @@ class SpiceNetlistParser:
         kept_models = [self.models[n] for n in sorted(used_models)]
 
         return {
-            "elements": [e["raw"] for e in kept_elements],
+            "elements": kept_elements,
             "models": kept_models,
         }
-
-
-_VALUE_DEVICES = set("RCLVIB")
-
 
 def element_ref(name, refs):
     """Reference of an element line, KiCad prefixes the device letter if the
@@ -148,7 +119,7 @@ def node_count(tokens):
     """Number of nodes of an element line: two for R/C/L/V/I/B, otherwise all
     tokens before the model name."""
 
-    if tokens[0][:1].upper() in _VALUE_DEVICES:
+    if tokens[0][:1].upper() in TWO_NODE_DEVICES:
         return 2
     return len([t for t in tokens[1:] if "=" not in t]) - 1
 
@@ -161,12 +132,13 @@ def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, anal
     source against ground, each port into a source / load / nothing, and appends the analysis directive.
 
     Args:
-        kept_elements: raw block element lines 
+        kept_elements: block element dicts from filter_block (name, tokens, raw).
         reference_node: SPICE node tied to 0 (the reference net / node 0).
         supply_nodes: {node: source spec} without the reference node, each becomes an
             independent source to 0, e.g. {'+5V': 'DC 5 AC 1'}.
-        ports: [(node, role, value)] from the user's per-port config,
-            role 'input' | 'load' | 'output'.
+        ports: [(node, role, value, load_type)] from the user's per-port config,
+            role 'input' | 'load' | 'output'; value is the source spec for input and
+            the part value for load, load_type 'R' | 'C' | 'L' (only used for load).
         analysis: analysis directive, e.g. '.op' or '.ac dec 20 1 1Meg'.
         models: model/subckt card lines referenced by the block (from filter_block).
         includes: .include lines of the export.
@@ -183,24 +155,19 @@ def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, anal
     for i, (node, spec) in enumerate(sorted(supply_nodes.items()), start=1):
         lines.append(f"V{i}_supply {node} 0 {spec}")
 
-    # input -> source 'Vin<i>', load -> passive 'R/C/Lload<i>' (R if no type given), output -> open
-    for i, (node, role, value) in enumerate(ports or []):
+    # input -> source 'Vin<i>', load -> passive 'R/C/Lload<i>', output -> open
+    for i, (node, role, value, load_type) in enumerate(ports or []):
         if role == "input":
             lines.append(f"Vin{i} {node} 0 {value}")
         elif role == "load":
-            parts = (value or "").split(None, 1)
-            dev = parts[0][:1].upper() if parts else "R"
-            if dev in ("R", "C", "L") and len(parts) > 1:
-                lines.append(f"{dev}load{i} {node} 0 {parts[1]}")
-            else:
-                lines.append(f"Rload{i} {node} 0 {value}")
+            lines.append(f"{load_type}load{i} {node} 0 {value}")
 
 
-    for raw in kept_elements:
-        tokens = raw.split()
+    for element in kept_elements:
+        tokens = list(element["tokens"])
         n = node_count(tokens)
         tokens[1:1 + n] = ["0" if t == reference_node else t for t in tokens[1:1 + n]]
-        if tokens[0][:1].upper() in ("R", "C", "L") and len(tokens) >= 4:
+        if tokens[0][:1].upper() in PASSIVE_DEVICES and len(tokens) >= 4:
             # KiCad copies the whole Value field ('1n 50V C0G', '10k/1%'): keep the value
             # and real parameters (ic=0), drop the rest
             tokens = tokens[:3] + [tokens[3].split("/")[0]] + [t for t in tokens[4:] if "=" in t]
@@ -228,8 +195,6 @@ def validate_deck(deck: str) -> dict:
     if not sources:
         errors.append("Keine Quelle im Deck - mindestens einen Port als input festlegen.")
 
-    value_re = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?[a-z]*$", re.I)
-
     directives = [l.split() for l in lines if l.startswith(".") and l.split()[0].lower()
                   not in (".title", ".options", ".include", ".lib", ".model", ".subckt", ".ends", ".end")]
     
@@ -242,16 +207,16 @@ def validate_deck(deck: str) -> dict:
         errors.append(f"Analyse '{analysis}' nicht unterstuetzt, .op, .ac oder .tran verwenden.")
     elif analysis == ".ac" and not (
             len(params) >= 4 and params[0].lower() in ("dec", "oct", "lin")
-            and all(value_re.match(p) for p in params[1:4])):
+            and all(SPICE_VALUE_RE.match(p) for p in params[1:4])):
         errors.append(".ac braucht 'dec|oct|lin <Punkte> <fStart> <fStop>', "
                       "z. B. '.ac dec 20 1 1Meg'.")
     elif analysis == ".tran" and not (
-            len(params) >= 2 and all(value_re.match(p) for p in params[:2])):
+            len(params) >= 2 and all(SPICE_VALUE_RE.match(p) for p in params[:2])):
         errors.append(".tran braucht '<Schritt> <Ende>', z. B. '.tran 1u 5m'.")
 
     for tokens in elements:
-        if tokens[0][:1].upper() in ("R", "C", "L") and (
-                len(tokens) < 4 or not value_re.match(tokens[3])):
+        if tokens[0][:1].upper() in PASSIVE_DEVICES and (
+                len(tokens) < 4 or not SPICE_VALUE_RE.match(tokens[3])):
             value = tokens[3] if len(tokens) > 3 else "leer"
             errors.append(f"{tokens[0]}: ungueltiger Wert '{value}' (z. B. DNP/NC?).")
 
@@ -321,7 +286,7 @@ def build_net_node_map(netlist_nets, spice_elements):
 
     net_to_node = {}
     for e in spice_elements:
-        if e["name"][:1].upper() not in ("R", "C", "L"):
+        if e["name"][:1].upper() not in PASSIVE_DEVICES:
             continue
         pins = ref_pins.get(e["name"].upper())
         if not pins or sorted(pins) != ["1", "2"]:
@@ -329,3 +294,131 @@ def build_net_node_map(netlist_nets, spice_elements):
         net_to_node.setdefault(pins["1"], e["tokens"][1])
         net_to_node.setdefault(pins["2"], e["tokens"][2])
     return net_to_node
+
+
+def grow_block(project_path, schematic_path, seed_components):
+    """Export the SPICE netlist and grow the block from the seeds over the parts KiCad
+    exported with a value or simulation model.
+
+    Returns: graph, sp, block
+    """
+
+    seeds = [s.strip() for s in (seed_components or "").split(",") if s.strip()]
+
+    try:
+        schematic_hash = hash_schematic(schematic_path)
+    except OSError as e:
+        return None, None, {"success": False, "error": f"Schaltplan nicht lesbar: {e}"}
+
+    graph, _ = get_graph_data(project_path, schematic_path, schematic_hash)
+    spice, export_error = get_spice_netlist(schematic_path, schematic_hash)
+    if not spice:
+        return graph, None, {"success": False,
+                             "error": export_error or "SPICE-Export fehlgeschlagen"}
+    sp = SpiceNetlistParser(spice)
+    sp.parse()
+    components = [r for r, n in graph.nodes.items() if n.get("type") == "component"]
+    return graph, sp, select_block(graph, seeds, sp.simulatable_refs(components))
+
+
+def select_ports(project_path, schematic_path, seed_components):
+    """Grow the block from the seeds and pre-fill its ports for the UI.
+
+    Returns (graph, block, ports): ports carry the suggested role, clarify
+    flag and readable outside pins.
+    """
+
+    graph, _, block = grow_block(project_path, schematic_path, seed_components)
+    if not block.get("success"):
+        return graph, block, []
+
+    ports = []
+    for port in block["ports"]:
+        suggestion = suggest_port_role(port)
+        ports.append({
+            "net": port["net"],
+            "role": suggestion["role"],
+            "clarify": suggestion["clarify"],
+            "outside_pins": [
+                f"{p['component']} {p['pinfunction'] or 'Pin ' + p['pin']} "
+                f"({p['electrical_type'] or 'unspecified'})"
+                for p in port["pins_outside"]
+            ],
+        })
+    return graph, block, ports
+
+
+def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
+                   ports: list, analysis: str = ".op", reference_net: str = "",
+                   supplies: list = None):
+    """Rebuild the block and assemble the isolated SPICE deck from the ports and supplies.
+
+    Returns: deck is the SPICE text, or None with an error
+    message; warnings are the block pre-checks.
+    """
+
+    # the ports come from the UI, only the block itself is rebuilt
+    graph, sp, block = grow_block(project_path, schematic_path, seed_components)
+    if not block.get("success"):
+        return None, f"Fehler: {block['error']}", []
+
+    rails = block["global_nets_touched"]
+    grounds = ground_nets(rails)
+    reference_net = reference_net or (grounds[0] if grounds else None)
+    if rails and reference_net is None:
+        return None, (
+            "Fehler: kein Massenetz (GND) im Block - bitte in der UI ein Bezugsnetz waehlen."
+        ), []
+
+    supply_nodes = {s["net"]: s["value"] for s in supplies or []
+                    if (s.get("value") or "").strip() and s["net"] != reference_net}
+
+    filtered = sp.filter_block(block["block_components"])
+    if not filtered["elements"]:
+        return None, (
+            "Fehler: keine simulierbaren Bauteile im Block gefunden. "
+            "Seeds muessen Bauteile mit Wert oder Simulationsmodell sein."
+        ), []
+
+    warnings = block_warnings(block)
+   
+    unpowered = [r for r in rails
+                 if r != reference_net and r not in grounds and r not in supply_nodes]
+    if unpowered:
+        warnings.append(
+            f"Keine Quelle an {', '.join(unpowered)} - diese Netze liegen nicht auf ihrer "
+            "Spannung, sondern haengen nur an den Bauteilen des Blocks."
+        )
+
+    # KiCad renames nets in the SPICE export ('Net-(D1-A)' -> 'Net-_D1-A_')
+    net_map = build_net_node_map(graph.netlist_data["nets"], sp.elements)
+    node = lambda net: net_map.get(net, net)
+
+    block_nodes = set()
+    for element in filtered["elements"]:
+        tokens = element["tokens"]
+        block_nodes.update(tokens[1:1 + node_count(tokens)])
+    driven = list(supply_nodes) + [p["net"] for p in ports or []
+                                   if p.get("role") in ("input", "load")]
+    unmapped = [net for net in driven if node(net) not in block_nodes]
+    if unmapped:
+        return None, (
+            f"Fehler: Netz {', '.join(unmapped)} hat im SPICE-Export keinen bekannten Namen - "
+            "die Quelle/Last waere mit keinem Bauteil verbunden. KiCad benennt Netze mit "
+            "Sonderzeichen im Export um (z. B. 'Net-(D1-A)' -> 'Net-_D1-A_'), der neue Name "
+            "laesst sich nur ueber ein R/C/L am Netz ableiten. Abhilfe: dem Netz in KiCad ein "
+            "Label ohne Sonderzeichen geben."
+        ), []
+
+    deck = build_isolated_deck(
+        kept_elements=filtered["elements"],
+        reference_node=node(reference_net),
+        supply_nodes={node(net): spec for net, spec in supply_nodes.items()},
+        ports=[(node(p.get("net")), p.get("role"), p.get("value"), p.get("load_type"))
+               for p in ports or []],
+        analysis=analysis or ".op",
+        models=filtered["models"],
+        includes=sp.includes,
+        title=f".title isolated block ({'+'.join(block['block_components'])})",
+    )
+    return deck, None, warnings

@@ -12,9 +12,8 @@ import threading
 import numpy as np
 
 from kicad_mcp.utils.cli_drc import KICAD_CLI_NOT_FOUND, find_kicad_cli
-from kicad_mcp.utils.spice_deck import validate_deck
+from kicad_mcp.utils.spice.deck import validate_deck
 
-# So two overlapping runs cannot crash ngspice which would kill the server process.
 _NGSPICE_LOCK = threading.Lock()
 
 
@@ -218,6 +217,16 @@ def _summary(result):
     return "Simulation OK (Arbeitspunkt gelöst)."
 
 
+def _magnitude_db(values):
+    """Magnitude of complex .ac values in dB."""
+    return 20 * np.log10(np.maximum(np.abs(values), 1e-30))
+
+
+def _rms(current, time):
+    """RMS value of a .tran waveform over its whole time window."""
+    return np.sqrt(np.trapezoid(current ** 2, time) / (time[-1] - time[0]))
+
+
 def _corner_frequency(freqs, db):
     """Frequency where the magnitude first falls 3 dB below its start value, or None."""
     below = np.nonzero(db < db[0] - 3)[0]
@@ -257,7 +266,7 @@ def result_tables(result: dict, deck: str) -> dict:
                 voltages.append({"name": name(node), "corner": "-", "gain": "kein AC-Anteil",
                                  "phase": "-"})
                 continue
-            db = 20 * np.log10(np.maximum(np.abs(values), 1e-30))
+            db = _magnitude_db(values)
             corner = _corner_frequency(freqs, db)
             voltages.append({"name": name(node),
                              "corner": _si(corner, "Hz") if corner else "-",
@@ -273,7 +282,7 @@ def result_tables(result: dict, deck: str) -> dict:
             label = name(element) if terminal == "i" else f"{name(element)} {terminal}"
         if analysis == "tran":
             time = sweep["axis"]
-            rms = np.sqrt(np.trapezoid(current ** 2, time) / (time[-1] - time[0]))
+            rms = _rms(current, time)
             currents.append({"name": label, "max": _si(np.abs(current).max(), "A"),
                              "eff": _si(rms, "A")})
         else:
@@ -299,7 +308,7 @@ def _format_currents(result):
     for name, current in currents.items():
         if result["analysis"] == "tran":
             time = result["sweep"]["axis"]
-            rms = np.sqrt(np.trapezoid(current ** 2, time) / (time[-1] - time[0]))
+            rms = _rms(current, time)
             lines.append(f"  {name}: max {_si(np.abs(current).max(), 'A')}, eff {_si(rms, 'A')}")
         else:
             lines.append(f"  {name} = {_si(current[0], 'A')}")
@@ -327,7 +336,7 @@ def format_result(result: dict) -> str:
                 lines.append(f"  {node}: kein AC-Anteil")
                 continue
 
-            db = 20 * np.log10(np.maximum(np.abs(values), 1e-30))
+            db = _magnitude_db(values)
             corner = _corner_frequency(freqs, db)
             lines.append(f"  {node}" + (f"  (-3 dB bei {_si(corner, 'Hz')})" if corner else ""))
 
