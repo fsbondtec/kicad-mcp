@@ -57,7 +57,8 @@ dependencies = [
     "einops>=0.8.2",
     "faiss-cpu>=1.7.0",
     "Pillow>=10.0.0",
-    "PySpice>=1.5"  # ngspice simulation of isolated blocks
+    "PySpice>=1.5", 
+    "numpy>=2.0",  
 ]
 
 

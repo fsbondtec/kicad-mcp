@@ -33,6 +33,7 @@ def get_entry(schematic_path: str) -> dict:
             "graph": None,
             "structured_data": None,
             "spice": None,
+            "spice_warning": None,
             "spice_schematic_hash": None,
         }
         _CACHE[key] = entry
@@ -92,7 +93,9 @@ def get_spice_netlist(schematic_path: str, schematic_hash: str = None):
         schematic_hash: hash_schematic() of the schematic if the caller already has it.
 
     Returns:
-        (spice, error): spice is the netlist text, or None with an error message.
+        (spice, message): spice is the netlist text or None. Without spice, message is
+        the error; with spice, it is what kicad-cli complained about (e.g. missing
+        models) or None.
     """
     if schematic_hash is None:
         try:
@@ -105,13 +108,14 @@ def get_spice_netlist(schematic_path: str, schematic_hash: str = None):
         spice_is_current = (entry["spice"] is not None
                             and entry["spice_schematic_hash"] == schematic_hash)
         if spice_is_current:
-            return entry["spice"], None
+            return entry["spice"], entry["spice_warning"]
 
         spice, error = export_netlist(schematic_path, "spice")
-        if error:
+        if not spice:
             print(error, file=sys.stderr)
             return None, error
 
         entry["spice"] = spice
+        entry["spice_warning"] = error
         entry["spice_schematic_hash"] = schematic_hash
-        return spice, None
+        return spice, error

@@ -338,14 +338,16 @@ def grow_block(project_path, schematic_path, seed_components):
         graph, _ = get_graph_data(project_path, schematic_path, schematic_hash)
     except RuntimeError as e:
         return None, None, {"success": False, "error": str(e)}
-    spice, export_error = get_spice_netlist(schematic_path, schematic_hash)
+    spice, export_message = get_spice_netlist(schematic_path, schematic_hash)
     if not spice:
         return graph, None, {"success": False,
-                             "error": export_error or "SPICE-Export fehlgeschlagen"}
+                             "error": export_message or "SPICE-Export fehlgeschlagen"}
     sp = SpiceNetlistParser(spice)
     sp.parse()
     components = [r for r, n in graph.nodes.items() if n.get("type") == "component"]
-    return graph, sp, select_block(graph, seeds, sp.simulatable_refs(components))
+    block = select_block(graph, seeds, sp.simulatable_refs(components))
+    block["export_warning"] = export_message
+    return graph, sp, block
 
 
 def select_ports(project_path, schematic_path, seed_components):

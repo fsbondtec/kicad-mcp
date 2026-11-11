@@ -163,7 +163,7 @@ def export_netlist(schematic_path: str, netlist_format: str):
                           f"{KICAD_CLI_EXPORT_TIMEOUT} s abgebrochen.")
 
         if process.returncode != 0:
-            details = process.stderr.strip()
+            details = "\n".join(dict.fromkeys(process.stderr.strip().splitlines()))
             if not details:
                 details = "keine Fehlerausgabe"
             error = (f"kicad-cli-Export ({netlist_format}) fehlgeschlagen "

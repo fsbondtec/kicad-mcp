@@ -108,6 +108,12 @@ def select_block(graph, seed_refs, simulatable, max_hops=DEFAULT_MAX_HOPS,
 
     seeds = [r.upper() for r in seed_refs]
 
+    unknown = [r for r in seeds if graph.nodes.get(r, {}).get("type") != "component"]
+    if unknown:
+        return {"success": False,
+                "error": f"Nicht im Schaltplan gefunden: {', '.join(unknown)} - "
+                         "Referenz pruefen (z. B. R1, C3)."}
+
     no_model = [r for r in seeds if r not in simulatable and not is_permeable(graph.nodes[r])]
     if no_model:
         return {"success": False,
@@ -201,7 +207,7 @@ def block_warnings(block):
     
     Returns:
         list of messages: block truncated, nets not followed (high fan-out), open pins,
-        more than one ground net. 
+        complaints of the SPICE export, more than one ground net.
     """
     warnings = []
     if block.get("truncated"):
@@ -218,6 +224,8 @@ def block_warnings(block):
         warnings.append(
             f"Offener Pin: {d['pin']['component']} Pin {d['pin']['pin']} an Netz {d['net']}."
         )
+    if block.get("export_warning"):
+        warnings.append(f"KiCad meldete beim SPICE-Export: {block['export_warning']}")
     rails = block["global_nets_touched"]
     grounds = ground_nets(rails)
     if len(grounds) > 1:
