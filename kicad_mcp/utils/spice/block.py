@@ -199,7 +199,9 @@ def suggest_port_role(port: dict) -> dict:
 
 def ground_nets(rails):
     """The touched rails that look like a ground net: 'GND...' or SPICE node '0'."""
-    return [n for n in rails if n == "0" or "GND" in n.upper()]
+    
+    grounds = [n for n in rails if n == "0" or "GND" in n.upper()]
+    return sorted(grounds, key=lambda n: n.upper() not in ("0", "GND"))
 
 
 def block_warnings(block):

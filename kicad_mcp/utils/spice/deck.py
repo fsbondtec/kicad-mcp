@@ -27,6 +27,10 @@ _RKM_PREFIX = {"R": "", "r": "", "K": "k", "M": "Meg"}
 # part values use 'M' for mega like KiCad, SPICE reads 'M' as milli: '1M' -> '1Meg'
 MEGA_M_RE = re.compile(r"^([+-]?(?:\d+\.?\d*|\.\d+))M(?![eE][gG])")
 
+# SPICE scale factors, letters after them are ignored ('100nF', '1kHz')
+_SCALE = {"t": 1e12, "g": 1e9, "k": 1e3, "m": 1e-3, "u": 1e-6, "n": 1e-9, "p": 1e-12,
+          "f": 1e-15}
+
 # parts with exactly two nodes and a value or source spec instead of a model name
 TWO_NODE_DEVICES = PASSIVE_DEVICES | frozenset("VIB")
 
@@ -122,6 +126,16 @@ def element_ref(name, refs):
     if name[1:].upper() in refs:
         return name[1:].upper()
     return None
+
+
+def spice_float(text):
+    """Value of a SPICE number: '4.7k' -> 4700.0, '1Meg' -> 1e6, '100nF' -> 1e-7.
+    text must match SPICE_VALUE_RE."""
+    number, suffix = re.match(r"^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)(.*)$",
+                              text, re.I).groups()
+    suffix = suffix.lower()
+    scale = 1e6 if suffix.startswith("meg") else _SCALE.get(suffix[:1], 1)
+    return float(number) * scale
 
 
 def part_value(value):
@@ -244,9 +258,11 @@ def validate_deck(deck: str) -> dict:
             else:
                 errors.append(f"{tokens[0]}: Wert '{tokens[3]}' ist keine SPICE-Zahl.")
 
+    node_of = lambda n: "0" if n.lower() == "gnd" else n
+
     seen_pairs = {}
     for name, a, b, *_ in sources:
-        pair = frozenset((a, b))
+        pair = frozenset((node_of(a), node_of(b)))
         if name[:1].upper() != "V":
             continue
         if len(pair) < 2:
@@ -268,7 +284,7 @@ def validate_deck(deck: str) -> dict:
 
     for tokens in elements:
         letter = tokens[0][:1].upper()
-        roots = [find(n) for n in tokens[1:1 + node_count(tokens)]]
+        roots = [find(node_of(n)) for n in tokens[1:1 + node_count(tokens)]]
         if letter in ("C", "I"):
             continue
         for r in roots[1:]:
@@ -282,7 +298,8 @@ def validate_deck(deck: str) -> dict:
         )
 
     source_lines = [" ".join(t) for t in sources]
-    if analysis == ".ac" and not any(re.search(r"\bAC\b", l, re.I) for l in source_lines):
+    if analysis == ".ac" and not any(re.search(r"\bAC\b", " ".join(t[3:]), re.I)
+                                     for t in sources):
         errors.append(".ac braucht eine AC-Quelle - bei einem input-Port oder einer "
                       "Versorgung eine AC-Amplitude eintragen (z. B. 1).")
     if analysis == ".tran" and not any(
@@ -422,10 +439,16 @@ def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
             "- ein Netz waehlen, an dem der Block haengt."
         ), []
 
+    tied = [r for r in rails if r.lower() == "gnd" and reference_net not in (None, "0", r)]
+
     supply_nodes = {s["net"]: s["value"] for s in supplies or []
-                    if (s.get("value") or "").strip() and s["net"] != reference_net}
+                    if (s.get("value") or "").strip() and s["net"] != reference_net
+                    and s["net"] not in tied}
 
     warnings = block_warnings(block)
+    for net in tied:
+        warnings.append(f"{net} ist in ngspice immer Masse und damit mit dem Bezugsnetz "
+                        f"{reference_net} verbunden - eine Quelle an {net} wird ignoriert.")
 
     unpowered = [r for r in rails
                  if r != reference_net and r not in grounds and r not in supply_nodes]

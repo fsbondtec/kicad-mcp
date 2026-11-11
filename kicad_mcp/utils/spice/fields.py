@@ -3,7 +3,7 @@ Form fields of the SPICE simulation UI: their definition, the check of the enter
 values and the conversion into SPICE text (analysis directive, source spec, port value).
 """
 
-from kicad_mcp.utils.spice.deck import MEGA_M_RE, SPICE_VALUE_RE
+from kicad_mcp.utils.spice.deck import MEGA_M_RE, SPICE_VALUE_RE, spice_float
 
 
 ANALYSIS_DEFAULTS = {
@@ -116,6 +116,41 @@ def check_fields(analysis: dict, ports: list, supplies: list) -> list:
         elif MEGA_M_RE.match(text):
             errors.append(f"{where}: '{text}' - M bedeutet in SPICE Milli. Fuer Mega 'Meg' "
                           "schreiben (1Meg), fuer Milli 'm' (1m).")
+
+    # check numbers make a runnable analysis
+    if not errors:
+        errors += _range_errors(analysis)
+    return errors
+
+
+def _range_errors(a: dict) -> list:
+    """Analysis values ngspice cannot run: zero or negative times, start after stop."""
+    def num(key):
+        text = str(a.get(key) or "").strip()
+        return spice_float(text) if text else None
+
+    errors = []
+    if a.get("analysis") == ".ac":
+        points, fstart, fstop = num("ac_points"), num("ac_fstart"), num("ac_fstop")
+        if points < 1:
+            errors.append("Analyse, Punkte: mindestens 1.")
+        if fstart <= 0 and a.get("ac_sweep") != "lin":
+            errors.append("Analyse, Startfrequenz: muss bei dec/oct groesser als 0 sein.")
+        if fstop <= fstart:
+            errors.append("Analyse, Stoppfrequenz: muss groesser als die Startfrequenz sein.")
+    elif a.get("analysis") == ".tran":
+        step, stop, start, tmax = (num("tran_step"), num("tran_stop"), num("tran_start"),
+                                   num("tran_max"))
+        if step <= 0:
+            errors.append("Analyse, Schrittweite: muss groesser als 0 sein.")
+        if stop <= 0:
+            errors.append("Analyse, Endzeit: muss groesser als 0 sein.")
+        elif step > stop:
+            errors.append("Analyse, Schrittweite: groesser als die Endzeit.")
+        if start is not None and not 0 <= start < stop:
+            errors.append("Analyse, Startzeit: muss zwischen 0 und der Endzeit liegen.")
+        if tmax is not None and tmax <= 0:
+            errors.append("Analyse, Max. Schritt: muss groesser als 0 sein.")
     return errors
 
 
