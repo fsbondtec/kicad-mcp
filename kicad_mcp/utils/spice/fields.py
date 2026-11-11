@@ -3,7 +3,7 @@ Form fields of the SPICE simulation UI: their definition, the check of the enter
 values and the conversion into SPICE text (analysis directive, source spec, port value).
 """
 
-from kicad_mcp.utils.spice.deck import SPICE_VALUE_RE
+from kicad_mcp.utils.spice.deck import MEGA_M_RE, SPICE_VALUE_RE
 
 
 ANALYSIS_DEFAULTS = {
@@ -113,6 +113,9 @@ def check_fields(analysis: dict, ports: list, supplies: list) -> list:
             errors.append(f"{where}: '{text}' - Punkt statt Komma verwenden.")
         elif not SPICE_VALUE_RE.match(text):
             errors.append(f"{where}: '{text}' ist keine SPICE-Zahl (z. B. 1u, 4.7k, 1Meg).")
+        elif MEGA_M_RE.match(text):
+            errors.append(f"{where}: '{text}' - M bedeutet in SPICE Milli. Fuer Mega 'Meg' "
+                          "schreiben (1Meg), fuer Milli 'm' (1m).")
     return errors
 
 

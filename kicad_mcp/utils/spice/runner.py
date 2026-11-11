@@ -70,11 +70,14 @@ def _plot_svg(ngspice, analysis, nodes, warnings, max_nodes=8):
             path = os.path.join(tmp, "plot.svg").replace("\\", "/")
             vectors = " ".join(f'{func}("{n}")' for n in shown)
             for command in ("set hcopydevtype=svg", "set color0=white", "set color1=black",
-                            f"hardcopy {path} {vectors}"):
+                            f"hardcopy '{path}' {vectors}"):
                 ngspice.exec_command(command)
             with open(path, encoding="utf-8") as f:
                 svg = f.read()
-            return svg[svg.find("<svg"):]       
+            start = svg.find("<svg")
+            if start < 0:
+                raise ValueError("ngspice hat kein SVG geschrieben.")
+            return svg[start:]
     except Exception as e:
         warnings.append(f"Diagramm konnte nicht erstellt werden: {type(e).__name__}: {e}")
         return None
@@ -158,7 +161,11 @@ def run_deck(deck: str) -> dict:
             else:
                 axis = "frequency" if out["analysis"] == "ac" else "time"
                 out["sweep"] = {"axis": np.array(plot[axis].to_waveform()).real, "nodes": nodes}
+                plot_log = len(collector.records)
                 out["svg"] = _plot_svg(ngspice, out["analysis"], nodes, out["warnings"])
+                if out["svg"] is None:
+                    out["warnings"] += collector.records[plot_log:]
+                del collector.records[plot_log:]
             if out["analysis"] != "ac":
                 currents = {name: np.array(vec.to_waveform()).real for name, vec in plot.items()
                             if (name.startswith("@") or vec.is_branch_current) and "." not in name}

@@ -170,7 +170,7 @@ def export_netlist(schematic_path: str, netlist_format: str):
                      f"(Code {process.returncode}): {details}")
 
         if os.path.exists(output_file):
-            with open(output_file, "r", encoding="latin-1") as f:
+            with open(output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
         elif error is None:
             error = "kicad-cli meldete Erfolg, aber die Netlist-Datei wurde nicht erzeugt."

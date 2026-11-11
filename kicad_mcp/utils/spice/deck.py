@@ -18,6 +18,15 @@ SPICE_VALUE_RE = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?[a-z]*$", re.I)
 # passive parts
 PASSIVE_DEVICES = frozenset("RCL")
 
+# the letter is  decimal point: '4k7' = 4.7k
+_RKM_RE = re.compile(r"^(\d*)([RrkKMGmunp])(\d+)$")
+
+# RKM letters that are no SPICE prefix as written, all others stay as they are
+_RKM_PREFIX = {"R": "", "r": "", "K": "k", "M": "Meg"}
+
+# part values use 'M' for mega like KiCad, SPICE reads 'M' as milli: '1M' -> '1Meg'
+MEGA_M_RE = re.compile(r"^([+-]?(?:\d+\.?\d*|\.\d+))M(?![eE][gG])")
+
 # parts with exactly two nodes and a value or source spec instead of a model name
 TWO_NODE_DEVICES = PASSIVE_DEVICES | frozenset("VIB")
 
@@ -115,6 +124,19 @@ def element_ref(name, refs):
     return None
 
 
+def part_value(value):
+    """SPICE number of a passive's Value field when KiCad exported it unconverted
+    because of an extra ('5k6;1W', '2200uF;63V', '10k/1%'): cut at ';' or '/', resolve
+    RKM ('5k6' -> '5.6k'), 'M' as mega ('1M' -> '1Meg') and 'µ' ('4.7µF' -> '4.7uF')."""
+    
+    value = re.split(r"[;/]", value)[0].replace("µ", "u").replace("μ", "u")
+    rkm = _RKM_RE.match(value)
+    if rkm:
+        whole, letter, frac = rkm.groups()
+        return f"{whole or 0}.{frac}{_RKM_PREFIX.get(letter, letter)}"
+    return MEGA_M_RE.sub(r"\1Meg", value)
+
+
 def node_count(tokens):
     """Number of nodes of an element line: two for R/C/L/V/I/B, otherwise all
     tokens before the model name."""
@@ -170,7 +192,7 @@ def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, anal
         if tokens[0][:1].upper() in PASSIVE_DEVICES and len(tokens) >= 4:
             # KiCad copies the whole Value field ('1n 50V C0G', '10k/1%'): keep the value
             # and real parameters (ic=0), drop the rest
-            tokens = tokens[:3] + [tokens[3].split("/")[0]] + [t for t in tokens[4:] if "=" in t]
+            tokens = tokens[:3] + [part_value(tokens[3])] + [t for t in tokens[4:] if "=" in t]
         lines.append(" ".join(tokens))
 
     lines.append(analysis)
@@ -217,8 +239,10 @@ def validate_deck(deck: str) -> dict:
     for tokens in elements:
         if tokens[0][:1].upper() in PASSIVE_DEVICES and (
                 len(tokens) < 4 or not SPICE_VALUE_RE.match(tokens[3])):
-            value = tokens[3] if len(tokens) > 3 else "leer"
-            errors.append(f"{tokens[0]}: ungueltiger Wert '{value}' (z. B. DNP/NC?).")
+            if len(tokens) < 4 or not tokens[3]:
+                errors.append(f"{tokens[0]}: kein Wert (Bauteil DNP/NC?).")
+            else:
+                errors.append(f"{tokens[0]}: Wert '{tokens[3]}' ist keine SPICE-Zahl.")
 
     seen_pairs = {}
     for name, a, b, *_ in sources:
