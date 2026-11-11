@@ -3,6 +3,7 @@ One cache entry per schematic for its kicad-cli exports: the KiCad netlist (as g
 and the SPICE netlist. Both are exported again only if the schematic has changed.
 """
 
+import os
 import sys
 import threading
 from typing import Dict
@@ -16,9 +17,15 @@ CACHE_LOCK = threading.Lock()
 
 _CACHE = {}
 
+def normalize_path(path: str) -> str:
+    """One spelling per file (absolute, case and slashes unified on Windows), so the
+    same schematic or project never gets a second cache entry."""
+    return os.path.normcase(os.path.abspath(path))
+
 def get_entry(schematic_path: str) -> dict:
     """Cache entry of the schematic, created empty on first use."""
-    entry = _CACHE.get(schematic_path)
+    key = normalize_path(schematic_path)
+    entry = _CACHE.get(key)
     if entry is None:
         entry = {
             "project_path": None,
@@ -28,7 +35,7 @@ def get_entry(schematic_path: str) -> dict:
             "spice": None,
             "spice_schematic_hash": None,
         }
-        _CACHE[schematic_path] = entry
+        _CACHE[key] = entry
     return entry
 
 def get_graph_data(project_path: str, schematic_path: str,
@@ -60,7 +67,7 @@ def get_graph_data(project_path: str, schematic_path: str,
     with CACHE_LOCK:
         entry = get_entry(schematic_path)
         graph_is_current = (entry["schematic_hash"] == schematic_hash
-                            and entry["project_path"] == project_path)
+                            and entry["project_path"] == normalize_path(project_path))
         if graph_is_current:
             return entry["graph"], entry["structured_data"]
 
@@ -71,7 +78,7 @@ def get_graph_data(project_path: str, schematic_path: str,
 
         entry["graph"] = graph
         entry["structured_data"] = structured_data
-        entry["project_path"] = project_path
+        entry["project_path"] = normalize_path(project_path)
         entry["schematic_hash"] = schematic_hash
         return graph, structured_data
 

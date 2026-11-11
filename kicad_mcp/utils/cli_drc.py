@@ -126,6 +126,9 @@ KICAD_CLI_NOT_FOUND = (
     "kicad-cli nicht gefunden. KiCad 9.0+ installiert bzw. KICAD_APP_PATH korrekt gesetzt?"
 )
 
+# seconds a netlist export may take
+KICAD_CLI_EXPORT_TIMEOUT = 120
+
 
 def export_netlist(schematic_path: str, netlist_format: str):
     """Export the schematic's netlist with kicad-cli.
@@ -151,9 +154,13 @@ def export_netlist(schematic_path: str, netlist_format: str):
                "--output", output_file, schematic_path]
         try:
             process = subprocess.run(cmd, capture_output=True, text=True,
-                                     stdin=subprocess.DEVNULL, env=kicad_cli_env())
+                                     stdin=subprocess.DEVNULL, env=kicad_cli_env(),
+                                     timeout=KICAD_CLI_EXPORT_TIMEOUT)
         except OSError as e:
             return None, f"kicad-cli konnte nicht gestartet werden: {e}"
+        except subprocess.TimeoutExpired:
+            return None, (f"kicad-cli-Export ({netlist_format}) nach "
+                          f"{KICAD_CLI_EXPORT_TIMEOUT} s abgebrochen.")
 
         if process.returncode != 0:
             details = process.stderr.strip()

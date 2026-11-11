@@ -58,7 +58,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
     """
 
     @mcp.tool()
-    async def get_netGraph(project_path: str, schematic_path: str):
+    def get_netGraph(project_path: str, schematic_path: str):
         """
         Extract the complete network graph (nodes and edges) of a KiCad schematic.
 
@@ -110,7 +110,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             }
 
     @mcp.tool()
-    async def get_circuit_path(
+    def get_circuit_path(
         project_path: str,
         schematic_path: str,
         start_component: str,
@@ -192,7 +192,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
 
     @mcp.tool()
-    async def analyze_functional_block(
+    def analyze_functional_block(
         project_path: str,
         schematic_path: str,
         center_component: str,
@@ -263,7 +263,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
             return {"success": False, "error": f"Error finding circuit path: {str(e)}"}
     
     @mcp.tool(app=AppConfig(resource_uri=IMAGE_VIEW_URI))
-    async def get_circuit_path_with_wires(
+    def get_circuit_path_with_wires(
         project_path: str,
         schematic_path: str,
         start_component: str,
@@ -391,7 +391,7 @@ def register_graph_tools(mcp: FastMCP) -> None:
 
 
     @mcp.tool(app=AppConfig(resource_uri=IMAGE_VIEW_URI))
-    async def highlight_pcb_path(
+    def highlight_pcb_path(
         project_path: str,
         path_nets: list,
         svg_stroke_color: str = "#FF1493",
