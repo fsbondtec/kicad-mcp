@@ -530,34 +530,23 @@ class CircuitGraph:
 
         power_symbols = set()
 
+        def value_of(symbol):
+            return next((p.value for p in symbol.properties if p.key == "Value"), None)
+
         # get symbols from all schematic sheets
         for sch_path in schematic_paths:
             sch = Schematic.from_file(sch_path)
+            lib_symbols = {ls.libId: ls for ls in sch.libSymbols}
 
             for inst in sch.schematicSymbols:
-                # only get Symbols from power Library
+                libsym = lib_symbols.get(inst.libName or inst.libId)
+                # power symbols are flagged "(power)" in their library symbol, whatever library they come from 
+                if libsym is None or not libsym.isPower:
+                    continue
 
-                if inst.libId is not None and inst.libId.startswith("power:"):
-                    entry = inst.entryName
-
-                    # get libsymbol with an iterator
-                    libsym = next((ls for ls in sch.libSymbols if ls.entryName == entry), None)
-
-                    if libsym is not None:
-                        # Parent Value from libSymbol
-                        for prop in libsym.properties:
-                            if prop.key == "Value":
-                                parent_value = prop.value
-
-                        # Child Value from the instance
-                        for prop in inst.properties:
-                            if prop.key == "Value":
-                                child_value = prop.value
-
-                        final_value = child_value if child_value is not None else parent_value
-
-                        if final_value:
-                            power_symbols.add(final_value)
+                value = value_of(inst) or value_of(libsym)
+                if value:
+                    power_symbols.add(value)
 
         return power_symbols
 

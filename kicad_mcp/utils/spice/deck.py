@@ -310,7 +310,10 @@ def grow_block(project_path, schematic_path, seed_components):
     except OSError as e:
         return None, None, {"success": False, "error": f"Schaltplan nicht lesbar: {e}"}
 
-    graph, _ = get_graph_data(project_path, schematic_path, schematic_hash)
+    try:
+        graph, _ = get_graph_data(project_path, schematic_path, schematic_hash)
+    except RuntimeError as e:
+        return None, None, {"success": False, "error": str(e)}
     spice, export_error = get_spice_netlist(schematic_path, schematic_hash)
     if not spice:
         return graph, None, {"success": False,
@@ -365,13 +368,6 @@ def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
     rails = block["global_nets_touched"]
     grounds = ground_nets(rails)
     reference_net = reference_net or (grounds[0] if grounds else None)
-    if rails and reference_net is None:
-        return None, (
-            "Fehler: kein Massenetz (GND) im Block - bitte in der UI ein Bezugsnetz waehlen."
-        ), []
-
-    supply_nodes = {s["net"]: s["value"] for s in supplies or []
-                    if (s.get("value") or "").strip() and s["net"] != reference_net}
 
     filtered = sp.filter_block(block["block_components"])
     if not filtered["elements"]:
@@ -379,16 +375,6 @@ def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
             "Fehler: keine simulierbaren Bauteile im Block gefunden. "
             "Seeds muessen Bauteile mit Wert oder Simulationsmodell sein."
         ), []
-
-    warnings = block_warnings(block)
-   
-    unpowered = [r for r in rails
-                 if r != reference_net and r not in grounds and r not in supply_nodes]
-    if unpowered:
-        warnings.append(
-            f"Keine Quelle an {', '.join(unpowered)} - diese Netze liegen nicht auf ihrer "
-            "Spannung, sondern haengen nur an den Bauteilen des Blocks."
-        )
 
     # KiCad renames nets in the SPICE export ('Net-(D1-A)' -> 'Net-_D1-A_')
     net_map = build_net_node_map(graph.netlist_data["nets"], sp.elements)
@@ -398,6 +384,31 @@ def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
     for element in filtered["elements"]:
         tokens = element["tokens"]
         block_nodes.update(tokens[1:1 + node_count(tokens)])
+
+    # without node 0 the deck has no reference and every node floats
+    if reference_net is None and "0" not in block_nodes:
+        remedy = ("bitte in der UI ein Bezugsnetz waehlen." if rails else
+                  "in KiCad ein Masse-Symbol (z. B. GND) an das Bezugsnetz des Blocks setzen.")
+        return None, f"Fehler: kein Massenetz (Knoten 0) am Block - {remedy}", []
+    if reference_net is not None and node(reference_net) not in block_nodes:
+        return None, (
+            f"Fehler: Bezugsnetz {reference_net} ist mit keinem Bauteil des Blocks verbunden "
+            "- ein Netz waehlen, an dem der Block haengt."
+        ), []
+
+    supply_nodes = {s["net"]: s["value"] for s in supplies or []
+                    if (s.get("value") or "").strip() and s["net"] != reference_net}
+
+    warnings = block_warnings(block)
+
+    unpowered = [r for r in rails
+                 if r != reference_net and r not in grounds and r not in supply_nodes]
+    if unpowered:
+        warnings.append(
+            f"Keine Quelle an {', '.join(unpowered)} - diese Netze liegen nicht auf ihrer "
+            "Spannung, sondern haengen nur an den Bauteilen des Blocks."
+        )
+
     driven = list(supply_nodes) + [p["net"] for p in ports or []
                                    if p.get("role") in ("input", "load")]
     unmapped = [net for net in driven if node(net) not in block_nodes]

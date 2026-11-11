@@ -49,6 +49,10 @@ def get_graph_data(project_path: str, schematic_path: str,
         tuple[CircuitGraph, Dict]: A tuple containing:
             - The instantiated CircuitGraph object representing the schematic logic.
             - A dictionary containing the structured raw data parsed from the netlist.
+
+    Raises:
+        RuntimeError: the netlist export failed; nothing is cached, the next call
+            exports again.
     """
     if schematic_hash is None:
         schematic_hash = hash_schematic(schematic_path)

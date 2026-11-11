@@ -192,8 +192,8 @@ def suggest_port_role(port: dict) -> dict:
 
 
 def ground_nets(rails):
-    """The touched rails that look like a ground net """
-    return [n for n in rails if "GND" in n.upper()]
+    """The touched rails that look like a ground net: 'GND...' or SPICE node '0'."""
+    return [n for n in rails if n == "0" or "GND" in n.upper()]
 
 
 def block_warnings(block):

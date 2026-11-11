@@ -39,8 +39,15 @@ class NetlistParser:
         self.netlist = None
 
     def export_netlist(self):
-        """Export the schematic as KiCad s-expression netlist into self.netlist."""
+        """Export the schematic as KiCad s-expression netlist into self.netlist.
+
+        Raises:
+            RuntimeError: kicad-cli wrote no netlist. A file written despite an error
+                code (e.g. missing simulation models) is kept.
+        """
         self.netlist, error = export_netlist(self.schematic_path, "kicadsexpr")
+        if not self.netlist:
+            raise RuntimeError(f"Netzlisten-Export fehlgeschlagen: {error or 'leere Netzliste'}")
         if error:
             print(f"Netlist export: {error}", file=sys.stderr)
 
