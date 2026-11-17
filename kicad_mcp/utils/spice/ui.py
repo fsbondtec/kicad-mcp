@@ -19,7 +19,9 @@ from fastmcp.apps.form import CallTool, SetState
 
 from kicad_mcp.utils.file_utils import get_project_files, resolve_project_file
 from kicad_mcp.utils.spice.block import block_warnings, ground_nets, guess_voltage
-from kicad_mcp.utils.spice.fields import ANALYSIS_DEFAULTS, SOURCE_FIELDS, SOURCE_KEYS
+from kicad_mcp.utils.spice.fields import (
+    ANALYSIS_DEFAULTS, ANALYSIS_FIELDS, SOURCE_FIELDS, SOURCE_KEYS,
+)
 from kicad_mcp.utils.svg_utils import (
     build_svg_map_from_project_files, plot_svg_schematic, render_block_sheet,
 )
@@ -91,15 +93,12 @@ def analysis_card():
                                 SelectOption(value="dec", label="dec - pro Dekade")
                                 SelectOption(value="oct", label="oct - pro Oktave")
                                 SelectOption(value="lin", label="lin - gesamt")
-                        field("Punkte", "ac_points", "20")
-                        field("Startfrequenz", "ac_fstart", "1")
-                        field("Stoppfrequenz", "ac_fstop", "1Meg")
+                        for key, label, example in ANALYSIS_FIELDS[".ac"]:
+                            field(label, key, example)
                 with If("analysis == '.tran'"):
                     with Grid(columns=4, gap=2, align="end"):
-                        field("Schrittweite", "tran_step", "1u")
-                        field("Endzeit", "tran_stop", "5m")
-                        field("Startzeit", "tran_start", "optional")
-                        field("Max. Schritt", "tran_max", "optional")
+                        for key, label, example in ANALYSIS_FIELDS[".tran"]:
+                            field(label, key, example)
                     Checkbox(name="tran_uic",
                              label="Einschalten simulieren, alle C/L starten bei 0 (UIC)")
 

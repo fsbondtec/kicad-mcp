@@ -6,11 +6,16 @@ values and the conversion into SPICE text (analysis directive, source spec, port
 from kicad_mcp.utils.spice.deck import MEGA_M_RE, SPICE_VALUE_RE, spice_float
 
 
-ANALYSIS_DEFAULTS = {
-    "analysis": ".op",
-    "ac_sweep": "dec", "ac_points": "20", "ac_fstart": "1", "ac_fstop": "1Meg",
-    "tran_step": "1u", "tran_stop": "5m", "tran_start": "", "tran_max": "", "tran_uic": False,
+# number fields of each analysis: (key, label, example), 'optional' = not required, starts empty
+ANALYSIS_FIELDS = {
+    ".ac": [("ac_points", "Punkte", "20"), ("ac_fstart", "Startfrequenz", "1"),
+            ("ac_fstop", "Stoppfrequenz", "1Meg")],
+    ".tran": [("tran_step", "Schrittweite", "1u"), ("tran_stop", "Endzeit", "5m"),
+              ("tran_start", "Startzeit", "optional"), ("tran_max", "Max. Schritt", "optional")],
 }
+ANALYSIS_DEFAULTS = {"analysis": ".op", "ac_sweep": "dec", "tran_uic": False,
+                     **{key: "" if example == "optional" else example
+                        for fields in ANALYSIS_FIELDS.values() for key, _, example in fields}}
 
 SOURCE_FIELDS = {
     "DC": [("dc", "Spannung", "5")],
@@ -69,16 +74,8 @@ def check_fields(analysis: dict, ports: list, supplies: list) -> list:
         list of error messages naming the field, empty if everything is fine.
     """
 
-    fields = []
-    if analysis.get("analysis") == ".ac":
-        fields.append(("Analyse, Punkte", analysis.get("ac_points"), True))
-        fields.append(("Analyse, Startfrequenz", analysis.get("ac_fstart"), True))
-        fields.append(("Analyse, Stoppfrequenz", analysis.get("ac_fstop"), True))
-    elif analysis.get("analysis") == ".tran":
-        fields.append(("Analyse, Schrittweite", analysis.get("tran_step"), True))
-        fields.append(("Analyse, Endzeit", analysis.get("tran_stop"), True))
-        fields.append(("Analyse, Startzeit", analysis.get("tran_start"), False))
-        fields.append(("Analyse, Max. Schritt", analysis.get("tran_max"), False))
+    fields = [(f"Analyse, {label}", analysis.get(key), example != "optional")
+              for key, label, example in ANALYSIS_FIELDS.get(analysis.get("analysis"), [])]
 
     errors = []
     sources = []
