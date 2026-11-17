@@ -22,21 +22,12 @@ def normalize_path(path: str) -> str:
     same schematic or project never gets a second cache entry."""
     return os.path.normcase(os.path.abspath(path))
 
-def get_entry(schematic_path: str) -> dict:
-    """Cache entry of the schematic, created empty on first use."""
-    key = normalize_path(schematic_path)
-    entry = _CACHE.get(key)
-    if entry is None:
-        entry = {
-            "project_path": None,
-            "schematic_hash": None,
-            "graph": None,
-            "structured_data": None,
-            "spice": None,
-            "spice_warning": None,
-            "spice_schematic_hash": None,
-        }
-        _CACHE[key] = entry
+def get_entry(schematic_path: str, schematic_hash: str) -> dict:
+    """Cache entry of the schematic, emptied if the schematic has changed."""
+    entry = _CACHE.setdefault(normalize_path(schematic_path), {})
+    if entry.get("hash") != schematic_hash:
+        entry.clear()
+        entry["hash"] = schematic_hash
     return entry
 
 def get_graph_data(project_path: str, schematic_path: str,
@@ -65,57 +56,37 @@ def get_graph_data(project_path: str, schematic_path: str,
     if schematic_hash is None:
         schematic_hash = hash_schematic(schematic_path)
 
+    project = normalize_path(project_path)
     with CACHE_LOCK:
-        entry = get_entry(schematic_path)
-        graph_is_current = (entry["schematic_hash"] == schematic_hash
-                            and entry["project_path"] == normalize_path(project_path))
-        if graph_is_current:
-            return entry["graph"], entry["structured_data"]
-
-        parser = NetlistParser(schematic_path)
-        parser.export_netlist()
-        structured_data = parser.structure_data()
-        graph = CircuitGraph(structured_data, project_path)
-
-        entry["graph"] = graph
-        entry["structured_data"] = structured_data
-        entry["project_path"] = normalize_path(project_path)
-        entry["schematic_hash"] = schematic_hash
-        return graph, structured_data
+        entry = get_entry(schematic_path, schematic_hash)
+        if entry.get("project") != project:
+            parser = NetlistParser(schematic_path)
+            parser.export_netlist()
+            structured_data = parser.structure_data()
+            entry["graph"] = (CircuitGraph(structured_data, project_path), structured_data)
+            entry["project"] = project
+        return entry["graph"]
 
 
-def get_spice_netlist(schematic_path: str, schematic_hash: str = None):
+def get_spice_netlist(schematic_path: str, schematic_hash: str):
     """Get the SPICE netlist of the schematic, exported via kicad-cli only if the
     cached one was made from an older schematic state.
 
     Args:
         schematic_path: root .kicad_sch file.
-        schematic_hash: hash_schematic() of the schematic if the caller already has it.
+        schematic_hash: hash_schematic() of the schematic.
 
     Returns:
         (spice, message): spice is the netlist text or None. Without spice, message is
         the error; with spice, it is what kicad-cli complained about (e.g. missing
         models) or None.
     """
-    if schematic_hash is None:
-        try:
-            schematic_hash = hash_schematic(schematic_path)
-        except OSError as e:
-            return None, f"Schaltplan nicht lesbar: {e}"
-
     with CACHE_LOCK:
-        entry = get_entry(schematic_path)
-        spice_is_current = (entry["spice"] is not None
-                            and entry["spice_schematic_hash"] == schematic_hash)
-        if spice_is_current:
-            return entry["spice"], entry["spice_warning"]
-
-        spice, error = export_netlist(schematic_path, "spice")
-        if not spice:
-            print(error, file=sys.stderr)
-            return None, error
-
-        entry["spice"] = spice
-        entry["spice_warning"] = error
-        entry["spice_schematic_hash"] = schematic_hash
-        return spice, error
+        entry = get_entry(schematic_path, schematic_hash)
+        if "spice" not in entry:
+            spice, error = export_netlist(schematic_path, "spice")
+            if not spice:
+                print(error, file=sys.stderr)
+                return None, error
+            entry["spice"] = (spice, error)
+        return entry["spice"]
