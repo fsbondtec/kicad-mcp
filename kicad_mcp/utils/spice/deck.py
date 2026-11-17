@@ -34,6 +34,19 @@ _SCALE = {"t": 1e12, "g": 1e9, "k": 1e3, "m": 1e-3, "u": 1e-6, "n": 1e-9, "p": 1
 # parts with exactly two nodes and a value or source spec instead of a model name
 TWO_NODE_DEVICES = PASSIVE_DEVICES | frozenset("VIB")
 
+# analyses: the UI sets the block's analysis, those of the export are dropped
+ANALYSIS_DIRECTIVES = (".op", ".ac", ".tran", ".dc", ".noise", ".tf", ".sens", ".pz",
+                       ".disto", ".four", ".sp")
+
+# output and structure lines of the export, dropped
+DROPPED_DIRECTIVES = ANALYSIS_DIRECTIVES + (".probe", ".save", ".print", ".plot", ".meas",
+                                            ".measure", ".width", ".end", ".ends", ".title")
+
+# directives with values per node (V(node)=value)
+NODE_DIRECTIVES = (".ic", ".nodeset")
+
+NOT_TAKEN = " - bei einer erfolgreichen Simulation im Ergebnis beruecksichtigen."
+
 
 class SpiceNetlistParser:
     """
@@ -45,6 +58,8 @@ class SpiceNetlistParser:
         self.includes = []
         self.models = {}
         self.elements = []
+        self.directives = []    
+        self.couplings = []    
 
     def parse(self):
         """
@@ -53,20 +68,28 @@ class SpiceNetlistParser:
         if not self.spice:
             return
 
+        in_control = False
         for raw in self.spice.splitlines():
             line = raw.strip()
             if not line or line.startswith("*"):
                 continue
 
-            low = line.lower()
-            if low.startswith(".include"):
+            word = line.split()[0].lower()
+            if word == ".control" or in_control:
+                in_control = word != ".endc"
+                continue
+            if word.startswith(".include"):
                 self.includes.append(line)
-            elif low.startswith(".model") or low.startswith(".subckt"):
+            elif word.startswith((".model", ".subckt")):
                 parts = line.split()
                 if len(parts) >= 2:
                     self.models[parts[1]] = line
-            elif line.startswith("."):
-                continue  
+            elif word in DROPPED_DIRECTIVES:
+                continue
+            elif word.startswith("."):
+                self.directives.append(line)
+            elif word.startswith("k"):
+                self.couplings.append(line.split())
             else:
                 tokens = line.split()
                 self.elements.append({"name": tokens[0], "tokens": tokens, "raw": line})
@@ -92,16 +115,21 @@ class SpiceNetlistParser:
         return {element_ref(e["name"], refs) for e in self.elements
                 if self._is_simulatable(e)} - {None}
 
-    def filter_block(self, block_components):
+    def filter_block(self, block_components, reference_node=None, known_refs=None):
         """
-        Keeps only the element lines belonging to the block and the model cards they
-        reference. 
+        Keeps only the element lines belonging to the block, the model cards they
+        reference, the directives that change the result and the couplings between
+        inductors of the block. What of the export is left out but could change the
+        block's result is reported in warnings.
 
         Args:
             block_components: component references forming the block.
+            reference_node: SPICE node that becomes 0, its .ic / .nodeset values are dropped.
+            known_refs: all component references of the schematic
 
         Returns:
-            dict with elements (the parsed element dicts: name, tokens, raw) and models.
+            dict with elements (the parsed element dicts: name, tokens, raw), models,
+            directives (lines for the deck, K lines included) and warnings.
         """
         wanted = {r.upper() for r in block_components}
 
@@ -113,9 +141,54 @@ class SpiceNetlistParser:
         }
         kept_models = [self.models[n] for n in sorted(used_models)]
 
+        names = {e["name"].upper() for e in kept_elements}
+        nodes = {t.upper() for e in kept_elements
+                 for t in e["tokens"][1:1 + node_count(e["tokens"])]}
+        ground = (reference_node or "").upper()
+        directives, warnings = [], []
+
+        for line in self.directives:
+            word = line.split()[0]
+            if word.lower() not in NODE_DIRECTIVES:
+                directives.append(line)
+                continue
+            entries = re.findall(r"v\(\s*([^)\s]+)\s*\)\s*=\s*(\S+)", line, re.I)
+            if not entries:
+                warnings.append(f"Nicht uebernommen: '{line}', Format nicht erkannt "
+                                f"(erwartet V(knoten)=wert){NOT_TAKEN}")
+                continue
+            inside = [(n, v) for n, v in entries if n.upper() in nodes and n.upper() != ground]
+            outside = [n for n, _ in entries if n.upper() not in nodes]
+            if inside:
+                directives.append(f"{word} " + " ".join(f"V({n})={v}" for n, v in inside))
+            if outside:
+                warnings.append(f"Nicht uebernommen: {word} fuer {', '.join(outside)}, "
+                                f"diese Knoten liegen nicht im Block{NOT_TAKEN}")
+
+        for tokens in self.couplings:
+            inductors = tokens[1:3]
+            missing = [l for l in inductors if l.upper() not in names]
+            if not missing:
+                directives.append(" ".join(tokens))
+            elif len(missing) < len(inductors):
+                warnings.append(
+                    f"Nicht uebernommen: Kopplung {tokens[0]} ({' - '.join(inductors)}), "
+                    f"{', '.join(missing)} liegt nicht im Block. Die Spulen im Block werden "
+                    f"ohne diese Kopplung gerechnet{NOT_TAKEN}")
+
+        known = {r.upper() for r in known_refs or []}
+        for e in self.elements:
+            touches = [t for t in e["tokens"][1:] if t.upper() in nodes and t.upper() != ground]
+            if known and not element_ref(e["name"], known) and touches:
+                warnings.append(f"Nicht uebernommen: '{e['raw']}' aus einem Schaltplantext, "
+                                f"kein Bauteil im Schaltplan, haengt an {', '.join(touches)}"
+                                f"{NOT_TAKEN}")
+
         return {
             "elements": kept_elements,
             "models": kept_models,
+            "directives": directives,
+            "warnings": warnings,
         }
 
 def element_ref(name, refs):
@@ -157,11 +230,14 @@ def node_count(tokens):
 
     if tokens[0][:1].upper() in TWO_NODE_DEVICES:
         return 2
+    if tokens[0][:1].upper() == "K":
+        return 0                    
     return len([t for t in tokens[1:] if "=" not in t]) - 1
 
 
 def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, analysis,
-                        models=None, includes=None, title=".title isolated block"):
+                        models=None, includes=None, title=".title isolated block",
+                        directives=None):
     """Assemble a runnable SPICE deck for an isolated block.
 
     Maps the reference net to node 0, turns each global rail into an independent
@@ -179,6 +255,7 @@ def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, anal
         models: model/subckt card lines referenced by the block (from filter_block).
         includes: .include lines of the export.
         title: deck title line.
+        directives: .options / .param / .ic / K ... lines from filter_block.
 
     Returns:
         the deck text as a string.
@@ -186,6 +263,7 @@ def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, anal
     lines = [title, ".options savecurrents"]   
 
     lines.extend(includes or [])
+    lines.extend(directives or [])
     lines.extend(models or [])
 
     for i, (node, spec) in enumerate(sorted(supply_nodes.items()), start=1):
@@ -206,7 +284,8 @@ def build_isolated_deck(kept_elements, reference_node, supply_nodes, ports, anal
         if tokens[0][:1].upper() in PASSIVE_DEVICES and len(tokens) >= 4:
             # KiCad copies the whole Value field ('1n 50V C0G', '10k/1%'): keep the value
             # and real parameters (ic=0), drop the rest
-            tokens = tokens[:3] + [part_value(tokens[3])] + [t for t in tokens[4:] if "=" in t]
+            value = tokens[3] if tokens[3].startswith("{") else part_value(tokens[3])
+            tokens = tokens[:3] + [value] + [t for t in tokens[4:] if "=" in t]
         lines.append(" ".join(tokens))
 
     lines.append(analysis)
@@ -231,8 +310,8 @@ def validate_deck(deck: str) -> dict:
     if not sources:
         errors.append("Keine Quelle im Deck - mindestens einen Port als input festlegen.")
 
-    directives = [l.split() for l in lines if l.startswith(".") and l.split()[0].lower()
-                  not in (".title", ".options", ".include", ".lib", ".model", ".subckt", ".ends", ".end")]
+    directives = [l.split() for l in lines
+                  if l.startswith(".") and l.split()[0].lower() in ANALYSIS_DIRECTIVES]
     
     analysis = directives[0][0].lower() if directives else None
     params = directives[0][1:] if directives else []
@@ -252,7 +331,8 @@ def validate_deck(deck: str) -> dict:
 
     for tokens in elements:
         if tokens[0][:1].upper() in PASSIVE_DEVICES and (
-                len(tokens) < 4 or not SPICE_VALUE_RE.match(tokens[3])):
+                len(tokens) < 4 or not (SPICE_VALUE_RE.match(tokens[3])
+                                        or tokens[3].startswith("{"))):
             if len(tokens) < 4 or not tokens[3]:
                 errors.append(f"{tokens[0]}: kein Wert (Bauteil DNP/NC?).")
             else:
@@ -412,16 +492,17 @@ def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
     grounds = ground_nets(rails)
     reference_net = reference_net or (grounds[0] if grounds else None)
 
-    filtered = sp.filter_block(block["block_components"])
+    # KiCad renames nets in the SPICE export ('Net-(D1-A)' -> 'Net-_D1-A_')
+    net_map = build_net_node_map(graph.netlist_data["nets"], sp.elements)
+    node = lambda net: net_map.get(net, net)
+
+    components = [r for r, n in graph.nodes.items() if n.get("type") == "component"]
+    filtered = sp.filter_block(block["block_components"], node(reference_net), components)
     if not filtered["elements"]:
         return None, (
             "Fehler: keine simulierbaren Bauteile im Block gefunden. "
             "Seeds muessen Bauteile mit Wert oder Simulationsmodell sein."
         ), []
-
-    # KiCad renames nets in the SPICE export ('Net-(D1-A)' -> 'Net-_D1-A_')
-    net_map = build_net_node_map(graph.netlist_data["nets"], sp.elements)
-    node = lambda net: net_map.get(net, net)
 
     block_nodes = set()
     for element in filtered["elements"]:
@@ -445,7 +526,7 @@ def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
                     if (s.get("value") or "").strip() and s["net"] != reference_net
                     and s["net"] not in tied}
 
-    warnings = block_warnings(block)
+    warnings = block_warnings(block) + filtered["warnings"]
     for net in tied:
         warnings.append(f"{net} ist in ngspice immer Masse und damit mit dem Bezugsnetz "
                         f"{reference_net} verbunden - eine Quelle an {net} wird ignoriert.")
@@ -479,6 +560,7 @@ def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
         analysis=analysis or ".op",
         models=filtered["models"],
         includes=sp.includes,
+        directives=filtered["directives"],
         title=f".title isolated block ({'+'.join(block['block_components'])})",
     )
     return deck, None, warnings
