@@ -59,9 +59,8 @@ def source_fields(prefix, state, dc="", dc_placeholder=None, ac=""):
         with Column(gap=1):
             Label("Quelle")
             with Select(name=f"{prefix}_type"):
-                SelectOption(value="DC", label="DC")
-                SelectOption(value="PULSE", label="PULSE")
-                SelectOption(value="SIN", label="SIN")
+                for kind in SOURCE_FIELDS:
+                    SelectOption(value=kind, label=kind)
         for kind, fields in SOURCE_FIELDS.items():
             with If(f"{prefix}_type == '{kind}'"):
                 for key, label, placeholder in fields:
@@ -101,6 +100,91 @@ def analysis_card():
                             field(label, key, example)
                     Checkbox(name="tran_uic",
                              label="Einschalten simulieren, alle C/L starten bei 0 (UIC)")
+
+
+def supply_card(rails, grounds, state):
+    """Reference net selection and one source per rail.
+
+    Returns:
+        the supplies argument of run_simulation: [{net, source}].
+    """
+    supplies = []
+    with Card():
+        with CardHeader():
+            CardTitle("Versorgung")
+        with CardContent():
+            with Column(gap=3):
+                with Row(gap=3, align="center"):
+                    Label("Masse (Knoten 0)")
+                    with Select(name="reference_net", placeholder="Bezugsnetz waehlen"):
+                        for rail in rails:
+                            SelectOption(value=rail, label=rail)
+                for i, rail in enumerate(rails):
+                    voltage = guess_voltage(rail)
+                    several = len(grounds) > 1 and rail in grounds
+                    hint = "0 = verbunden, leer = getrennt" if several else None
+                    quoted = rail.replace("\\", "\\\\").replace("'", "\\'")
+                    with If(f"reference_net != '{quoted}'"):
+                        Text(rail)
+                        source = source_fields(f"supply_{i}", state,
+                                               f"{voltage:g}" if voltage is not None else "",
+                                               dc_placeholder=hint)
+                    supplies.append({"net": rail, "source": source})
+                if len(rails) > 1:
+                    Muted("Spannung leer lassen = keine Quelle an diesem Netz.")
+    return supplies
+
+
+def ports_card(ports, state):
+    """Role per port with its source (input) or load (load) fields.
+
+    Returns:
+        the ports argument of run_simulation: [{net, role, source, load_type, load_value}].
+    """
+    port_args = []
+    with Card():
+        with CardHeader():
+            CardTitle("Ports")
+        with CardContent():
+            with Column(gap=3):
+                for i, p in enumerate(ports):
+                    if i:
+                        Separator()
+                    state[f"role_{i}"] = p["role"]
+                    state[f"load_type_{i}"] = "R"
+                    state[f"load_value_{i}"] = ""
+
+                    with Row(gap=3, align="center"):
+                        Text(f"{i + 1}: {p['net']}")
+                        if p["clarify"]:
+                            Badge("Rolle unklar", variant="warning")
+                        with Select(name=f"role_{i}"):
+                            SelectOption(value="input", label="input - Quelle")
+                            SelectOption(value="output", label="output - wird gemessen")
+                            SelectOption(value="load", label="load - Last gegen Masse")
+                    Muted(f"Aussen: {', '.join(p['outside_pins'])}")
+
+                    # the If only decides what the UI shows, the fields are built for every port
+                    with If(f"role_{i} == 'input'"):
+                        source = source_fields(f"port_{i}", state, "5", ac="1")
+                    with If(f"role_{i} == 'load'"):
+                        with Grid(minColumnWidth="6rem", gap=2, align="end"):
+                            with Column(gap=1):
+                                Label("Last")
+                                with Select(name=f"load_type_{i}"):
+                                    SelectOption(value="R", label="R")
+                                    SelectOption(value="C", label="C")
+                                    SelectOption(value="L", label="L")
+                            field("Wert", f"load_value_{i}", "10k")
+
+                    port_args.append({
+                        "net": p["net"],
+                        "role": getattr(STATE, f"role_{i}"),
+                        "source": source,
+                        "load_type": getattr(STATE, f"load_type_{i}"),
+                        "load_value": getattr(STATE, f"load_value_{i}"),
+                    })
+    return port_args
 
 
 VOLTAGE_COLUMNS = {
@@ -188,6 +272,46 @@ def block_images(project_path, graph, block, ports):
             for sheet, parts in sheets.items() if parts["parts"] and sheet in svg_map]
 
 
+def block_card(project_path, graph, block, ports):
+    """Schematic excerpts of the block (limited to MAX_IMAGE_BYTES) and the hints on it."""
+    
+    hints = [f"Hinweis: {warning}" for warning in block_warnings(block)]
+    unclear = [p["net"] for p in ports if p["clarify"]]
+    if unclear:
+        hints.append(f"Rolle unklar (vorbelegt als output) - bitte pruefen: {', '.join(unclear)}")
+    if not ports:
+        hints.append("Keine offenen Ports - der Block wird nur aus den Versorgungsnetzen gespeist.")
+    hints += [
+        "Jeder Port ist ein Netz, das den Block verlaesst. Lege je Port fest, was dort "
+        "angeschlossen wird",
+        "Quellen: DC fuer .op, AC-Amplitude fuer .ac, PULSE/SIN fuer .tran.",
+        "SPICE-Einheiten: k, Meg, m, u, n",
+    ]
+
+    with Card():
+        with CardHeader():
+            CardTitle(f"Block {', '.join(block['block_components'])}")
+        with CardContent():
+            try:
+                images = block_images(project_path, graph, block, ports)
+            except Exception as e:
+                print(f"Schaltplanausschnitt fehlgeschlagen: {e}", file=sys.stderr)
+                images = []
+            shown = 0
+            for image in images:
+                if shown + len(image) > MAX_IMAGE_BYTES:
+                    Muted("Weitere Schaltplanausschnitte ausgelassen, zu gross fuer die Anzeige.")
+                    break
+                Svg(image, width="100%")
+                shown += len(image)
+            if not images:
+                Muted("Schaltplanausschnitt nicht verfuegbar.")
+            with Accordion(collapsible=True):
+                with AccordionItem(title=f"Hinweise ({len(hints)})"):
+                    for hint in hints:
+                        Muted(hint)
+
+
 def simulation_view(project_path, schematic_path, seed_components, graph, block, ports):
     """View of open_spice_simulation: block excerpt and hints, analysis, supplies and
     ports with their source / load fields, the button that calls run_simulation and the
@@ -213,113 +337,11 @@ def simulation_view(project_path, schematic_path, seed_components, graph, block,
                  "sim_warnings": [], "reference_net": grounds[0] if grounds else "",
                  **ANALYSIS_DEFAULTS}
 
-        hints = [f"Hinweis: {warning}" for warning in block_warnings(block)]
-        unclear = [p["net"] for p in ports if p["clarify"]]
-        if unclear:
-            hints.append(f"Rolle unklar (vorbelegt als output) - bitte pruefen: {', '.join(unclear)}")
-        if not ports:
-            hints.append("Keine offenen Ports - der Block wird nur aus den Versorgungsnetzen gespeist.")
-        hints += [
-            "Jeder Port ist ein Netz, das den Block verlaesst. Lege je Port fest, was dort "
-            "angeschlossen wird",
-            "Quellen: DC fuer .op, AC-Amplitude fuer .ac, PULSE/SIN fuer .tran.",
-            "SPICE-Einheiten: k, Meg, m, u, n",
-        ]
-
-        with Card():
-            with CardHeader():
-                CardTitle(f"Block {', '.join(block['block_components'])}")
-            with CardContent():
-                try:
-                    images = block_images(project_path, graph, block, ports)
-                except Exception as e:
-                    print(f"Schaltplanausschnitt fehlgeschlagen: {e}", file=sys.stderr)
-                    images = []
-                shown = 0
-                for image in images:
-                    if shown + len(image) > MAX_IMAGE_BYTES:
-                        Muted("Weitere Schaltplanausschnitte ausgelassen, zu gross fuer die Anzeige.")
-                        break
-                    Svg(image, width="100%")
-                    shown += len(image)
-                if not images:
-                    Muted("Schaltplanausschnitt nicht verfuegbar.")
-                with Accordion(collapsible=True):
-                    with AccordionItem(title=f"Hinweise ({len(hints)})"):
-                        for hint in hints:
-                            Muted(hint)
-
+        block_card(project_path, graph, block, ports)
         analysis_card()
 
-        args_supplies = []
-        if rails:
-            with Card():
-                with CardHeader():
-                    CardTitle("Versorgung")
-                with CardContent():
-                    with Column(gap=3):
-                        with Row(gap=3, align="center"):
-                            Label("Masse (Knoten 0)")
-                            with Select(name="reference_net", placeholder="Bezugsnetz waehlen"):
-                                for rail in rails:
-                                    SelectOption(value=rail, label=rail)
-                        for i, rail in enumerate(rails):
-                            voltage = guess_voltage(rail)
-                            several = len(grounds) > 1 and rail in grounds
-                            hint = "0 = verbunden, leer = getrennt" if several else None
-                            quoted = rail.replace("\\", "\\\\").replace("'", "\\'")
-                            with If(f"reference_net != '{quoted}'"):
-                                Text(rail)
-                                source = source_fields(f"supply_{i}", state,
-                                                        f"{voltage:g}" if voltage is not None else "",
-                                                        dc_placeholder=hint)
-                            args_supplies.append({"net": rail, "source": source})
-                        if len(rails) > 1:      
-                            Muted("Spannung leer lassen = keine Quelle an diesem Netz.")
-
-        args_ports = []
-        if ports:
-            with Card():
-                with CardHeader():
-                    CardTitle("Ports")
-                with CardContent():
-                    with Column(gap=3):
-                        for i, p in enumerate(ports):
-                            if i:
-                                Separator()
-                            state[f"role_{i}"] = p["role"]
-                            state[f"load_type_{i}"] = "R"
-                            state[f"load_value_{i}"] = ""
-
-                            with Row(gap=3, align="center"):
-                                Text(f"{i + 1}: {p['net']}")    
-                                if p["clarify"]:
-                                    Badge("Rolle unklar", variant="warning")
-                                with Select(name=f"role_{i}"):
-                                    SelectOption(value="input", label="input - Quelle")
-                                    SelectOption(value="output", label="output - wird gemessen")
-                                    SelectOption(value="load", label="load - Last gegen Masse")
-                            Muted(f"Aussen: {', '.join(p['outside_pins'])}")
-
-                            with If(f"role_{i} == 'input'"):
-                                source = source_fields(f"port_{i}", state, "5", ac="1")
-                            with If(f"role_{i} == 'load'"):
-                                with Grid(minColumnWidth="6rem", gap=2, align="end"):
-                                    with Column(gap=1):
-                                        Label("Last")
-                                        with Select(name=f"load_type_{i}"):
-                                            SelectOption(value="R", label="R")
-                                            SelectOption(value="C", label="C")
-                                            SelectOption(value="L", label="L")
-                                    field("Wert", f"load_value_{i}", "10k")
-
-                            args_ports.append({
-                                "net": p["net"],
-                                "role": getattr(STATE, f"role_{i}"),
-                                "source": source,
-                                "load_type": getattr(STATE, f"load_type_{i}"),
-                                "load_value": getattr(STATE, f"load_value_{i}"),
-                            })
+        args_supplies = supply_card(rails, grounds, state) if rails else []
+        args_ports = ports_card(ports, state) if ports else []
 
         call_args = {
             "project_path": project_path,
