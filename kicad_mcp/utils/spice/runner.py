@@ -234,13 +234,34 @@ def _rms(current, time):
     return np.sqrt(np.trapezoid(current ** 2, time) / (time[-1] - time[0]))
 
 
-def _corner_frequency(freqs, db):
-    """Frequency where the magnitude first falls 3 dB below its start value, or None."""
-    below = np.nonzero(db < db[0] - 3)[0]
-    if not below.size or below[0] == 0:
+def _passband(freqs, db):
+    """Pass band of an .ac magnitude: where it is within 3 dB of its maximum.
+    """
+    keep = freqs > 0
+    logf, db = np.log10(freqs[keep]), db[keep]
+    if db.size < 2:
         return None
-    i = below[0]
-    return 10 ** np.interp(db[0] - 3, [db[i], db[i - 1]], np.log10([freqs[i], freqs[i - 1]]))
+
+    level = db.max() - 3
+    peak = int(db.argmax())
+    below = np.nonzero(db < level)[0]
+    left, right = below[below < peak], below[below > peak]
+
+    def crossing(under, over):
+        return _si(10 ** np.interp(level, [db[under], db[over]], [logf[under], logf[over]]), "Hz")
+
+    def flat(a, b):
+        return abs(db[b] - db[a]) < 3 * abs(logf[b] - logf[a])    
+
+    lower = crossing(left[-1], left[-1] + 1) if left.size else None
+    upper = crossing(right[0], right[0] - 1) if right.size else None
+    if lower and upper:
+        return f"{lower} - {upper}"
+    if upper and flat(0, 1):
+        return f"bis {upper}"
+    if lower and flat(-2, -1):
+        return f"ab {lower}"
+    return None
 
 
 def result_tables(result: dict, deck: str) -> dict:
@@ -274,9 +295,8 @@ def result_tables(result: dict, deck: str) -> dict:
                                  "phase": "-"})
                 continue
             db = _magnitude_db(values)
-            corner = _corner_frequency(freqs, db)
             voltages.append({"name": name(node),
-                             "corner": _si(corner, "Hz") if corner else "-",
+                             "corner": _passband(freqs, db) or "-",
                              "gain": f"{db[-1]:.1f} dB",
                              "phase": f"{np.angle(values[-1], deg=True):.1f}°"})
 
@@ -344,8 +364,8 @@ def format_result(result: dict) -> str:
                 continue
 
             db = _magnitude_db(values)
-            corner = _corner_frequency(freqs, db)
-            lines.append(f"  {node}" + (f"  (-3 dB bei {_si(corner, 'Hz')})" if corner else ""))
+            passband = _passband(freqs, db)
+            lines.append(f"  {node}" + (f"  (Durchlass, -3 dB: {passband})" if passband else ""))
 
             for f in decades:
                 i = int(np.argmin(np.abs(np.log10(freqs) - np.log10(f))))

@@ -190,7 +190,7 @@ def ports_card(ports, state):
 VOLTAGE_COLUMNS = {
     "op": [("name", "Knoten"), ("value", "Spannung")],
     "tran": [("name", "Knoten"), ("min", "min"), ("max", "max"), ("end", "Ende")],
-    "ac": [("name", "Knoten"), ("corner", "-3 dB bei"), ("gain", "Betrag (fstop)"),
+    "ac": [("name", "Knoten"), ("corner", "Durchlass (-3 dB)"), ("gain", "Betrag (fstop)"),
            ("phase", "Phase (fstop)")],
 }
 CURRENT_COLUMNS = {
