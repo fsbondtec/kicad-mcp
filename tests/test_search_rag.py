@@ -58,7 +58,7 @@ class TestLoad:
         mock_model = MagicMock()
         mock_index = MagicMock()
 
-        with patch("sentence_transformers.SentenceTransformer", return_value=mock_model), \
+        with patch("kicad_mcp.utils.search_rag.SentenceTransformer", return_value=mock_model), \
              patch("faiss.read_index", return_value=mock_index):
             rag._load()
 

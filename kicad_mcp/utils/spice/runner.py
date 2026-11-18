@@ -426,7 +426,6 @@ def format_result(result: dict) -> str:
 
     if sweep and result["analysis"] == "ac":
         freqs = sweep["axis"]
-        # .ac lin may start at 0 Hz, which has no place on the log scale of the decade rows
         positive = np.nonzero(freqs > 0)[0]
         log_f = np.log10(freqs[positive])
         decades = (10.0 ** np.arange(np.ceil(log_f[0]), log_f[-1] + 1e-9)
