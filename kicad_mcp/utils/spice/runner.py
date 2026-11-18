@@ -426,7 +426,11 @@ def format_result(result: dict) -> str:
 
     if sweep and result["analysis"] == "ac":
         freqs = sweep["axis"]
-        decades = 10.0 ** np.arange(np.ceil(np.log10(freqs[0])), np.log10(freqs[-1]) + 1e-9)
+        # .ac lin may start at 0 Hz, which has no place on the log scale of the decade rows
+        positive = np.nonzero(freqs > 0)[0]
+        log_f = np.log10(freqs[positive])
+        decades = (10.0 ** np.arange(np.ceil(log_f[0]), log_f[-1] + 1e-9)
+                   if positive.size else [])
         lines += ["", "Frequenzgang (Betrag / Phase):"]
 
         for node, values in sorted(sweep["nodes"].items()):
@@ -439,7 +443,7 @@ def format_result(result: dict) -> str:
             lines.append(f"  {node}" + (f"  (Durchlass, -3 dB: {passband})" if passband else ""))
 
             for f in decades:
-                i = int(np.argmin(np.abs(np.log10(freqs) - np.log10(f))))
+                i = positive[int(np.argmin(np.abs(log_f - np.log10(f))))]
                 lines.append(f"      {_si(freqs[i], 'Hz'):>9}  {db[i]:7.1f} dB  "
                              f"{np.angle(values[i], deg=True):7.1f}°")
 

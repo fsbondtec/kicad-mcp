@@ -7,6 +7,7 @@ This will allow users to compare DRC results over time.
 import os
 import json
 import platform
+import sys
 import time
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -105,7 +106,7 @@ def get_drc_history(project_path: str) -> List[Dict[str, Any]]:
     history_path = get_project_history_path(project_path)
 
     if not os.path.exists(history_path):
-        print(f"No DRC history found for {project_path}")
+        print(f"No DRC history found for {project_path}", file=sys.stderr)
         return []
 
     try:
@@ -119,7 +120,7 @@ def get_drc_history(project_path: str) -> List[Dict[str, Any]]:
 
         return entries
     except (json.JSONDecodeError, IOError) as e:
-        print(f"Error reading DRC history: {str(e)}")
+        print(f"Error reading DRC history: {str(e)}", file=sys.stderr)
         return []
 
 

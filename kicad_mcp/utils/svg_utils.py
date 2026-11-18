@@ -145,7 +145,7 @@ def build_svg_map_from_project_files(project_files: Dict) -> Dict[str, str]:
                 svg_map[sch_path] = os.path.join(project_dir, best_match)
                 
     except (OSError, FileNotFoundError) as e:
-        print(f"Error searching directory: {e}")
+        print(f"Error searching directory: {e}", file=sys.stderr)
 
     return svg_map
 

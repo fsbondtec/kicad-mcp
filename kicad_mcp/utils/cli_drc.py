@@ -6,6 +6,7 @@ import os
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 from typing import Dict, Any, Optional
 
@@ -67,7 +68,7 @@ async def run_drc_via_cli(pcb_file: str) -> Dict[str, Any]:
             # Process the DRC report
             violations = drc_report.get("violations", [])
             violation_count = len(violations)
-            print(f"DRC completed with {violation_count} violations")
+            print(f"DRC completed with {violation_count} violations", file=sys.stderr)
 
             # Categorize violations by type
             error_types = {}

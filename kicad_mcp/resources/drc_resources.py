@@ -3,6 +3,7 @@ Design Rule Check (DRC) resources for KiCad PCB files.
 """
 
 import os
+import sys
 
 from mcp.server.fastmcp import FastMCP
 
@@ -148,7 +149,7 @@ def register_drc_resources(mcp: FastMCP) -> None:
         Returns:
             Markdown-formatted DRC report
         """
-        print(f"Generating DRC report for project: {project_path}")
+        print(f"Generating DRC report for project: {project_path}", file=sys.stderr)
 
         if not os.path.exists(project_path):
             return f"Project not found: {project_path}"
