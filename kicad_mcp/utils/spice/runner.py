@@ -3,6 +3,7 @@ Runs an assembled SPICE deck through ngspice (KiCad's shared library, driven via
 and reports the result of its .op / .ac / .tran analysis.
 """
 
+import glob
 import logging
 import os
 import sys
@@ -47,6 +48,47 @@ def _configure_ngspice_library() -> str | None:
     lib = "ngspice{}.dll" if sys.platform == "win32" else "libngspice{}.so"
     NgSpiceShared.LIBRARY_PATH = os.path.join(bin_dir, lib)
     return bin_dir
+
+
+_code_models_loaded = False
+
+
+def _load_code_models(bin_dir: str, warnings: list) -> None:
+    """Load KiCad's XSPICE code models into ngspice.
+    """
+
+    global _code_models_loaded
+    if _code_models_loaded:
+        return
+
+    from PySpice.Spice.NgSpice.Shared import NgSpiceShared
+
+    failed = []
+    cm_dir = os.path.normpath(os.path.join(bin_dir, os.pardir, "lib", "ngspice"))
+    paths = sorted(glob.glob(os.path.join(cm_dir, "*.cm")))
+    if not paths and sys.platform != "win32":
+        return     
+    try:
+        ngspice = NgSpiceShared.new_instance()
+        for path in paths:
+            path = path.replace("\\", "/")
+            if "'" in path:
+                failed.append(f"{os.path.basename(path)} (Pfad mit Apostroph)")
+                continue
+            try:
+                ngspice.exec_command(f"codemodel '{path}'")
+            except Exception as e:
+                failed.append(f"{os.path.basename(path)} ({type(e).__name__})")
+    except Exception as e:
+        failed.append(f"ngspice nicht bereit ({type(e).__name__}: {e})")
+
+    if not paths:
+        failed.append(f"keine .cm-Dateien unter {cm_dir}")
+    if failed:
+        warnings.append("Code-Modelle nicht geladen: " + ", ".join(failed) + " - Bauteile mit "
+                        "POLY-Quellen (viele Hersteller-Opamps) oder Digitalmodellen scheitern.")
+    else:
+        _code_models_loaded = True
 
 
 def _plot_svg(ngspice, analysis, nodes, warnings, max_nodes=8):
@@ -130,6 +172,7 @@ def run_deck(deck: str) -> dict:
     from PySpice.Spice.NgSpice.Shared import NgSpiceCommandError, NgSpiceShared
 
     with _NGSPICE_LOCK:
+        _load_code_models(bin_dir, out["warnings"])
         collector = _LogCollector()
         pyspice_logger = logging.getLogger("PySpice")
         prev_level = pyspice_logger.level
