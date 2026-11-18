@@ -13,7 +13,7 @@ from kicad_mcp.utils.spice.runner import (
 )
 
 needs_ngspice = pytest.mark.skipif(find_kicad_cli() is None,
-                                   reason="kicad-cli / ngspice von KiCad nicht installiert")
+                                   reason="kicad-cli / ngspice of KiCad not installed")
 
 
 def _deck(*lines):
@@ -53,14 +53,14 @@ class TestPassband:
     def test_lowpass(self):
         h = 1 / (1 + 1j * FREQS / 1591.5)
 
-        assert _passband(FREQS, _db(h)) == "bis 1.59 kHz"
+        assert _passband(FREQS, _db(h)) == "up to 1.59 kHz"
 
     def test_highpass(self):
         """3 dB below the maximum is at 1595 Hz (exactly 3 dB, not 3.01 dB = 1/sqrt(2))."""
         x = 1j * FREQS / 1591.5
         h = x / (1 + x)
 
-        assert _passband(FREQS, _db(h)) == "ab 1.6 kHz"
+        assert _passband(FREQS, _db(h)) == "from 1.6 kHz"
 
     def test_bandpass(self):
         """Poles two decades apart: the maximum is -0.086 dB, the edges are measured from it."""
@@ -81,7 +81,7 @@ class TestPassband:
     def test_lin_sweep_from_zero(self):
         freqs = np.linspace(0, 20e3, 201)
 
-        assert _passband(freqs, _db(1 / (1 + 1j * freqs / 1591.5))) == "bis 1.59 kHz"
+        assert _passband(freqs, _db(1 / (1 + 1j * freqs / 1591.5))) == "up to 1.59 kHz"
 
 
 class TestHarmlessNotes:
@@ -110,7 +110,7 @@ class TestReports:
 
         report = format_result(result)
 
-        assert "Frequenzgang 0 Hz - 1 kHz" in report
+        assert "frequency response 0 Hz - 1 kHz" in report
         assert "1 kHz" in report
 
     def test_ac_table(self):
@@ -118,7 +118,7 @@ class TestReports:
 
         rows = result_tables(_ac_result(FREQS, h), _deck("R1 in out 1k"))["voltages"]
 
-        assert rows == [{"name": "out", "corner": "bis 1.59 kHz", "gain": "-76.0 dB", "phase": "-90.0°"}]
+        assert rows == [{"name": "out", "corner": "up to 1.59 kHz", "gain": "-76.0 dB", "phase": "-90.0°"}]
 
     def test_node_names_spelled_as_in_deck(self):
         """ngspice writes node names in lower case, the tables use the deck's spelling."""
@@ -137,7 +137,7 @@ class TestReports:
         tables = result_tables(failed, "")
 
         assert tables["status"] == "invalid"
-        assert "ngspice wurde nicht gestartet" in tables["summary"]
+        assert "ngspice was not started" in tables["summary"]
 
 
 @pytest.mark.requires_kicad
@@ -162,7 +162,7 @@ class TestRunDeck:
 
         rows = {r["name"]: r for r in result_tables(result, "")["voltages"]}
         assert result["success"] is True
-        assert rows["out"]["corner"] == "bis 1.59 kHz"
+        assert rows["out"]["corner"] == "up to 1.59 kHz"
         assert result["svg"]
 
     def test_transient(self):
@@ -177,7 +177,7 @@ class TestRunDeck:
                                 ".ac lin 10 0 1k"))
 
         assert result["success"] is True
-        assert "Frequenzgang 0 Hz - 1 kHz" in format_result(result)
+        assert "frequency response 0 Hz - 1 kHz" in format_result(result)
 
     def test_ignored_model_parameter_is_a_warning(self):
         """PSpice extras like vpk are skipped by ngspice, the result stays valid."""
@@ -212,6 +212,6 @@ class TestRunDeck:
         good = run_deck(_deck("V1 in 0 DC 5", "R1 in out 1k", "R2 out 0 1k", ".op"))
 
         assert broken["success"] is False
-        assert any("neu geladen" in w for w in broken["warnings"])
+        assert any("was reloaded" in w for w in broken["warnings"])
         assert good["success"] is True
         assert runner._code_models_loaded is True

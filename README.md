@@ -21,15 +21,15 @@ This guide will help you set up a Model Context Protocol (MCP) server for KiCad.
 
 - Windows
 - Python 3.10 or higher
-- KiCad 9.0 or higher
+- KiCad 9.0 or higher (its `kicad-cli` and, for the SPICE simulation, its ngspice library are used)
 - [uv](https://docs.astral.sh/uv/) 0.8.0 or higher **or** Miniconda/Anaconda
-- Claude Desktop (or another MCP client)
+- Claude Desktop (or another MCP client; the SPICE simulation form needs a client that displays MCP apps)
 
 ## Build
 
 ### 1. Set Up Your Python Environment
 
-First, let's install dependencies and set up our environment. Pick either `uv` (uses `pyproject.toml`/`uv.lock`) or `conda` (uses `environment.yml`), both are fully supported.
+First, let's install dependencies and set up our environment. Pick either `uv` (uses `pyproject.toml`; `uv sync` creates the lock file `uv.lock` locally, it is not part of the repository) or `conda` (uses `environment.yml`), both are fully supported.
 
 ```bash
 # Clone the repository
@@ -43,7 +43,7 @@ cd kicad-mcp
 # Create the virtual environment and install dependencies
 uv sync
 
-# Run all tests
+# Run all tests (tests that need KiCad are skipped if kicad-cli is not found)
 uv run pytest tests/ -v
 
 # run server
@@ -71,7 +71,9 @@ kicad-mcp
 
 ### 2. Configure Your Environment
 
-`KICAD_USER_DIR` and `KICAD_APP_PATH` default to platform-specific paths and are stored in `kicad-mcp-config.json`, auto-created on first run under Claude's "Claude Extensions Settings" folder (`%APPDATA%\Claude\Claude Extensions Settings\` on Windows). Edit that file to point at a different KiCad user/app directory, or change the hardcoded defaults directly in `kicad_mcp/config.py`.
+`KICAD_USER_DIR` defaults to a platform-specific path and is stored in `kicad-mcp-config.json`, auto-created on first run under Claude's "Claude Extensions Settings" folder (`%APPDATA%\Claude\Claude Extensions Settings\` on Windows). Edit that file to point at a different KiCad user directory.
+
+`KICAD_APP_PATH` (the KiCad installation whose `kicad-cli` and ngspice the server uses) is set only in `kicad_mcp/config.py` (`_DEFAULT_APP_PATH`), not in `kicad-mcp-config.json`. Set it there to your KiCad version, e.g. `C:/Program Files/KiCad/9.0/`.
 
 Additional project search directories can be set via the `KICAD_SEARCH_PATHS` environment variable - see [Configuration](#configuration).
 
@@ -160,6 +162,9 @@ The KiCad MCP Server provides several key features, each with detailed documenta
 - **Schematic and PCB path visualisation in SVG files**: Generate visual representation of paths in schematic and PCB SVG plotting
   - *Example*: "Can you find the high voltage path through my project and highlight it in schematic and pcb?" → Plots with kicad-cli all schematics to SVG and then all PCB layers in one SVG file, highlights the connections
 
+- **SPICE Simulation of a Circuit Block**: Cut a block out of the schematic around seed components and simulate it with KiCad's ngspice (`.op`, `.ac`, `.tran`), set up in an interactive form
+  - *Example:* "Simulate the RC filter around R1 and tell me its cut-off frequency" → Opens the simulation form; after you set the input source, shows the pass band, node voltages and a diagram
+
 For more examples and details on each feature, see the dedicated guides in the documentation. You can also ask the LLM what tools it has access to!
 
 ## Natural Language Interaction
@@ -190,6 +195,7 @@ Detailed documentation for each feature is available in the `docs/` directory:
 - [Highlighting Path in plotted PCB](docs/visualize_path.md)
 - [Highlight Path in plotted schematic file](docs/visualize_path_schematic.md)
 - [Datasheet RAG Search](docs/rag_guide.md)
+- [SPICE Simulation](docs/spice_guide.md)
 
 ## Configuration
 
@@ -197,7 +203,7 @@ Detailed documentation for each feature is available in the `docs/` directory:
 |---------|-------------|-------------|---------|
 | `KICAD_SEARCH_PATHS` | Environment variable or `.env` file | Comma-separated list of additional directories to search for KiCad projects | `~/pcb,~/Electronics,~/Projects` |
 | `KICAD_USER_DIR` | `kicad-mcp-config.json` or `kicad_mcp/config.py` | Override the default KiCad user directory | `~/Documents/KiCadProjects` |
-| `KICAD_APP_PATH` | `kicad-mcp-config.json` or `kicad_mcp/config.py` | Override the default KiCad application path | `C:/Program Files/KiCad/9.0` |
+| `KICAD_APP_PATH` | `kicad_mcp/config.py` (`_DEFAULT_APP_PATH`) | KiCad installation whose `kicad-cli` and ngspice are used | `C:/Program Files/KiCad/9.0` |
 
 `KICAD_USER_DIR` and `KICAD_APP_PATH` are **not** environment variables - see [Configure Your Environment](#2-configure-your-environment) for where to change them.
 

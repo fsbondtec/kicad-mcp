@@ -87,7 +87,7 @@ class TestCheckFields:
     def test_input_without_values(self):
         errors = check_fields(_analysis(), [{"net": "/in", "role": "input", "source": _source()}], [])
 
-        assert errors == ["Port 1 (/in): keine Quellwerte eingetragen."]
+        assert errors == ["Port 1 (/in): no source values entered."]
 
     def test_supply_may_stay_empty(self):
         assert check_fields(_analysis(), [], [{"net": "+5V", "source": _source()}]) == []
@@ -95,29 +95,29 @@ class TestCheckFields:
     def test_load_without_value(self):
         errors = check_fields(_analysis(), [{"net": "/out", "role": "load", "load_value": ""}], [])
 
-        assert errors == ["Port 1 (/out), Wert: Feld ist leer."]
+        assert errors == ["Port 1 (/out), value: field is empty."]
 
     def test_comma_instead_of_point(self):
         errors = check_fields(_analysis(), [{"net": "/out", "role": "load", "load_value": "4,7k"}], [])
 
-        assert errors == ["Port 1 (/out), Wert: '4,7k' - Punkt statt Komma verwenden."]
+        assert errors == ["Port 1 (/out), value: '4,7k' - use a point instead of a comma."]
 
     def test_no_spice_number(self):
         errors = check_fields(_analysis(), [{"net": "/out", "role": "load", "load_value": "abc"}], [])
 
-        assert any("'abc' ist keine SPICE-Zahl" in e for e in errors)
+        assert any("'abc' is not a SPICE number" in e for e in errors)
 
     @pytest.mark.parametrize("value", ["1M", "1MHz"])
     def test_capital_m_rejected(self, value):
         """SPICE reads M as milli, a load of '1M' would be 1 milliohm."""
         errors = check_fields(_analysis(), [{"net": "/out", "role": "load", "load_value": value}], [])
 
-        assert any("M bedeutet in SPICE Milli" in e for e in errors)
+        assert any("M means milli in SPICE" in e for e in errors)
 
     def test_required_analysis_field_empty(self):
         errors = check_fields(_analysis(analysis=".ac", ac_points=""), [], [])
 
-        assert errors == ["Analyse, Punkte: Feld ist leer."]
+        assert errors == ["Analysis, Points: field is empty."]
 
     def test_fields_of_other_analysis_ignored(self):
         assert check_fields(_analysis(analysis=".op", ac_points="", tran_step="x"), [], []) == []
@@ -125,17 +125,17 @@ class TestCheckFields:
     def test_tran_step_larger_than_stop(self):
         errors = check_fields(_analysis(analysis=".tran", tran_step="1m", tran_stop="1u"), [], [])
 
-        assert errors == ["Analyse, Schrittweite: groesser als die Endzeit."]
+        assert errors == ["Analysis, Step: greater than the stop time."]
 
     def test_tran_start_after_stop(self):
         errors = check_fields(_analysis(analysis=".tran", tran_start="10m"), [], [])
 
-        assert errors == ["Analyse, Startzeit: muss zwischen 0 und der Endzeit liegen."]
+        assert errors == ["Analysis, Start time: must be between 0 and the stop time."]
 
     def test_ac_start_zero_needs_lin(self):
         errors = check_fields(_analysis(analysis=".ac", ac_fstart="0"), [], [])
 
-        assert errors == ["Analyse, Startfrequenz: muss bei dec/oct groesser als 0 sein."]
+        assert errors == ["Analysis, Start frequency: must be greater than 0 for dec/oct."]
 
     def test_ac_lin_may_start_at_zero(self):
         assert check_fields(_analysis(analysis=".ac", ac_sweep="lin", ac_fstart="0"), [], []) == []
@@ -143,4 +143,4 @@ class TestCheckFields:
     def test_ac_stop_not_above_start(self):
         errors = check_fields(_analysis(analysis=".ac", ac_fstart="1k", ac_fstop="100"), [], [])
 
-        assert errors == ["Analyse, Stoppfrequenz: muss groesser als die Startfrequenz sein."]
+        assert errors == ["Analysis, Stop frequency: must be greater than the start frequency."]

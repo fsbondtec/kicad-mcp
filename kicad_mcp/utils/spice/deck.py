@@ -49,7 +49,7 @@ DROPPED_DIRECTIVES = ANALYSIS_DIRECTIVES + (".probe", ".save", ".print", ".plot"
 # directives with values per node (V(node)=value)
 NODE_DIRECTIVES = (".ic", ".nodeset")
 
-NOT_TAKEN = " - bei einer erfolgreichen Simulation im Ergebnis beruecksichtigen."
+NOT_TAKEN = " - take this into account when reading a successful result."
 
 
 class SpiceNetlistParser:
@@ -158,16 +158,16 @@ class SpiceNetlistParser:
                 continue
             entries = re.findall(r"v\(\s*([^)\s]+)\s*\)\s*=\s*(\S+)", line, re.I)
             if not entries:
-                warnings.append(f"Nicht uebernommen: '{line}', Format nicht erkannt "
-                                f"(erwartet V(knoten)=wert){NOT_TAKEN}")
+                warnings.append(f"Not taken over: '{line}', format not recognised "
+                                f"(expected V(node)=value){NOT_TAKEN}")
                 continue
             inside = [(n, v) for n, v in entries if n.upper() in nodes and n.upper() != ground]
             outside = [n for n, _ in entries if n.upper() not in nodes]
             if inside:
                 directives.append(f"{word} " + " ".join(f"V({n})={v}" for n, v in inside))
             if outside:
-                warnings.append(f"Nicht uebernommen: {word} fuer {', '.join(outside)}, "
-                                f"diese Knoten liegen nicht im Block{NOT_TAKEN}")
+                warnings.append(f"Not taken over: {word} for {', '.join(outside)}, "
+                                f"these nodes are not in the block{NOT_TAKEN}")
 
         for tokens in self.couplings:
             inductors = tokens[1:3]
@@ -176,16 +176,16 @@ class SpiceNetlistParser:
                 directives.append(" ".join(tokens))
             elif len(missing) < len(inductors):
                 warnings.append(
-                    f"Nicht uebernommen: Kopplung {tokens[0]} ({' - '.join(inductors)}), "
-                    f"{', '.join(missing)} liegt nicht im Block. Die Spulen im Block werden "
-                    f"ohne diese Kopplung gerechnet{NOT_TAKEN}")
+                    f"Not taken over: coupling {tokens[0]} ({' - '.join(inductors)}), "
+                    f"{', '.join(missing)} is not in the block. The inductors in the block are "
+                    f"simulated without this coupling{NOT_TAKEN}")
 
         known = {r.upper() for r in known_refs or []}
         for e in self.elements:
             touches = [t for t in e["tokens"][1:] if t.upper() in nodes and t.upper() != ground]
             if known and not element_ref(e["name"], known) and touches:
-                warnings.append(f"Nicht uebernommen: '{e['raw']}' aus einem Schaltplantext, "
-                                f"kein Bauteil im Schaltplan, haengt an {', '.join(touches)}"
+                warnings.append(f"Not taken over: '{e['raw']}' from a schematic text, "
+                                f"no component of the schematic, connected to {', '.join(touches)}"
                                 f"{NOT_TAKEN}")
 
         return {
@@ -312,7 +312,7 @@ def validate_deck(deck: str) -> dict:
     sources = [t for t in elements if t[0][:1].upper() in ("V", "I")]
 
     if not sources:
-        errors.append("Keine Quelle im Deck - mindestens einen Port als input festlegen.")
+        errors.append("No source in the deck - set at least one port to input.")
 
     directives = [l.split() for l in lines
                   if l.startswith(".") and l.split()[0].lower() in ANALYSIS_DIRECTIVES]
@@ -321,31 +321,31 @@ def validate_deck(deck: str) -> dict:
     params = directives[0][1:] if directives else []
 
     if analysis is None:
-        errors.append("Keine Analyse im Deck - .op, .ac oder .tran angeben.")
+        errors.append("No analysis in the deck - use .op, .ac or .tran.")
     elif analysis not in (".op", ".ac", ".tran"):
-        errors.append(f"Analyse '{analysis}' nicht unterstuetzt, .op, .ac oder .tran verwenden.")
+        errors.append(f"Analysis '{analysis}' is not supported, use .op, .ac or .tran.")
     elif analysis == ".ac" and not (
             len(params) >= 4 and params[0].lower() in ("dec", "oct", "lin")
             and all(SPICE_VALUE_RE.match(p) for p in params[1:4])):
-        errors.append(".ac braucht 'dec|oct|lin <Punkte> <fStart> <fStop>', "
-                      "z. B. '.ac dec 20 1 1Meg'.")
+        errors.append(".ac needs 'dec|oct|lin <points> <fstart> <fstop>', "
+                      "e.g. '.ac dec 20 1 1Meg'.")
     elif analysis == ".tran" and not (
             len(params) >= 2 and all(SPICE_VALUE_RE.match(p) for p in params[:2])):
-        errors.append(".tran braucht '<Schritt> <Ende>', z. B. '.tran 1u 5m'.")
+        errors.append(".tran needs '<step> <stop>', e.g. '.tran 1u 5m'.")
 
     for tokens in elements:
         if tokens[0][:1].upper() in PASSIVE_DEVICES and (
                 len(tokens) < 4 or not (SPICE_VALUE_RE.match(tokens[3])
                                         or tokens[3].startswith("{"))):
             if len(tokens) < 4 or not tokens[3]:
-                errors.append(f"{tokens[0]}: kein Wert (Bauteil DNP/NC?).")
+                errors.append(f"{tokens[0]}: no value (part DNP/NC?).")
             else:
-                errors.append(f"{tokens[0]}: Wert '{tokens[3]}' ist keine SPICE-Zahl.")
+                errors.append(f"{tokens[0]}: value '{tokens[3]}' is not a SPICE number.")
         elif tokens[0][:1].upper() == "C" and len(tokens) >= 4 \
                 and FARAD_NO_PREFIX_RE.match(tokens[3]):
             number = tokens[3][:-1]
-            warnings.append(f"{tokens[0]}: '{tokens[3]}' bedeutet in SPICE {number} Femtofarad. "
-                            f"Fuer {number} Farad '{number}' schreiben.")
+            warnings.append(f"{tokens[0]}: '{tokens[3]}' means {number} femtofarad in SPICE. "
+                            f"For {number} farad write '{number}'.")
 
     node_of = lambda n: "0" if n.lower() == "gnd" else n
 
@@ -355,10 +355,10 @@ def validate_deck(deck: str) -> dict:
         if name[:1].upper() != "V":
             continue
         if len(pair) < 2:
-            errors.append(f"{name}: beide Anschluesse am selben Knoten {a}.")
+            errors.append(f"{name}: both terminals on the same node {a}.")
         elif pair in seen_pairs:
-            errors.append(f"{name} und {seen_pairs[pair]} liegen parallel ({a}/{b}) - "
-                          "einen der beiden Ports nicht als input festlegen.")
+            errors.append(f"{name} and {seen_pairs[pair]} are in parallel ({a}/{b}) - "
+                          "set only one of the two ports to input.")
         else:
             seen_pairs[pair] = name
 
@@ -382,18 +382,18 @@ def validate_deck(deck: str) -> dict:
     floating = sorted(n for n in parent if find(n) != find("0"))
     if floating:
         errors.append(
-            f"Kein DC-Pfad nach Masse: {', '.join(floating)} - Port als load "
-            "(z. B. R 1G) festlegen oder Block erweitern."
+            f"No DC path to ground: {', '.join(floating)} - set a port to load "
+            "(e.g. R 1G) or grow the block."
         )
 
     source_lines = [" ".join(t) for t in sources]
     if analysis == ".ac" and not any(re.search(r"\bAC\b", " ".join(t[3:]), re.I)
                                      for t in sources):
-        errors.append(".ac braucht eine AC-Quelle - bei einem input-Port oder einer "
-                      "Versorgung eine AC-Amplitude eintragen (z. B. 1).")
+        errors.append(".ac needs an AC source - enter an AC amplitude (e.g. 1) at an input "
+                      "port or a supply.")
     if analysis == ".tran" and not any(
             re.search(r"\b(SIN|PULSE|PWL|EXP)\s*\(", l, re.I) for l in source_lines):
-        warnings.append(".tran nur mit DC-Quellen - Ergebnis ist ein konstanter Verlauf.")
+        warnings.append(".tran with DC sources only - the result is a constant curve.")
 
     return {"errors": errors, "warnings": warnings}
 
@@ -438,7 +438,7 @@ def grow_block(project_path, schematic_path, seed_components):
     try:
         schematic_hash = hash_schematic(schematic_path)
     except OSError as e:
-        return None, None, {"success": False, "error": f"Schaltplan nicht lesbar: {e}"}
+        return None, None, {"success": False, "error": f"Schematic not readable: {e}"}
 
     try:
         graph, _ = get_graph_data(project_path, schematic_path, schematic_hash)
@@ -447,7 +447,7 @@ def grow_block(project_path, schematic_path, seed_components):
     spice, export_message = get_spice_netlist(schematic_path, schematic_hash)
     if not spice:
         return graph, None, {"success": False,
-                             "error": export_message or "SPICE-Export fehlgeschlagen"}
+                             "error": export_message or "SPICE export failed"}
     sp = SpiceNetlistParser(spice)
     sp.parse()
     components = [r for r, n in graph.nodes.items() if n.get("type") == "component"]
@@ -495,7 +495,7 @@ def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
     # the ports come from the UI, only the block itself is rebuilt
     graph, sp, block = grow_block(project_path, schematic_path, seed_components)
     if not block.get("success"):
-        return None, f"Fehler: {block['error']}", []
+        return None, f"Error: {block['error']}", []
 
     rails = block["global_nets_touched"]
     grounds = ground_nets(rails)
@@ -509,8 +509,8 @@ def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
     filtered = sp.filter_block(block["block_components"], node(reference_net), components)
     if not filtered["elements"]:
         return None, (
-            "Fehler: keine simulierbaren Bauteile im Block gefunden. "
-            "Seeds muessen Bauteile mit Wert oder Simulationsmodell sein."
+            "Error: no simulatable components in the block. "
+            "Seeds must be components with a value or a simulation model."
         ), []
 
     block_nodes = set()
@@ -520,13 +520,13 @@ def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
 
     # without node 0 the deck has no reference and every node floats
     if reference_net is None and "0" not in block_nodes:
-        remedy = ("bitte in der UI ein Bezugsnetz waehlen." if rails else
-                  "in KiCad ein Masse-Symbol (z. B. GND) an das Bezugsnetz des Blocks setzen.")
-        return None, f"Fehler: kein Massenetz (Knoten 0) am Block - {remedy}", []
+        remedy = ("choose a reference net in the form." if rails else
+                  "add a ground symbol (e.g. GND) to the block's reference net in KiCad.")
+        return None, f"Error: no ground net (node 0) on the block - {remedy}", []
     if reference_net is not None and node(reference_net) not in block_nodes:
         return None, (
-            f"Fehler: Bezugsnetz {reference_net} ist mit keinem Bauteil des Blocks verbunden "
-            "- ein Netz waehlen, an dem der Block haengt."
+            f"Error: reference net {reference_net} is not connected to any component of the "
+            "block - choose a net the block is connected to."
         ), []
 
     tied = [r for r in rails if r.lower() == "gnd" and reference_net not in (None, "0", r)]
@@ -537,15 +537,15 @@ def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
 
     warnings = block_warnings(block) + filtered["warnings"]
     for net in tied:
-        warnings.append(f"{net} ist in ngspice immer Masse und damit mit dem Bezugsnetz "
-                        f"{reference_net} verbunden - eine Quelle an {net} wird ignoriert.")
+        warnings.append(f"{net} is always ground in ngspice and therefore connected to the reference "
+                        f"net {reference_net} - a source at {net} is ignored.")
 
     unpowered = [r for r in rails
                  if r != reference_net and r not in grounds and r not in supply_nodes]
     if unpowered:
         warnings.append(
-            f"Keine Quelle an {', '.join(unpowered)} - diese Netze liegen nicht auf ihrer "
-            "Spannung, sondern haengen nur an den Bauteilen des Blocks."
+            f"No source at {', '.join(unpowered)} - these nets are not at their voltage, "
+            "they are only connected to the components of the block."
         )
 
     driven = list(supply_nodes) + [p["net"] for p in ports or []
@@ -553,11 +553,11 @@ def assemble_deck(project_path: str, schematic_path: str, seed_components: str,
     unmapped = [net for net in driven if node(net) not in block_nodes]
     if unmapped:
         return None, (
-            f"Fehler: Netz {', '.join(unmapped)} hat im SPICE-Export keinen bekannten Namen - "
-            "die Quelle/Last waere mit keinem Bauteil verbunden. KiCad benennt Netze mit "
-            "Sonderzeichen im Export um (z. B. 'Net-(D1-A)' -> 'Net-_D1-A_'), der neue Name "
-            "laesst sich nur ueber ein R/C/L am Netz ableiten. Abhilfe: dem Netz in KiCad ein "
-            "Label ohne Sonderzeichen geben."
+            f"Error: net {', '.join(unmapped)} has no known name in the SPICE export - "
+            "the source/load would not be connected to any component. KiCad renames nets "
+            "with special characters in the export (e.g. 'Net-(D1-A)' -> 'Net-_D1-A_'), the "
+            "new name can only be derived from an R/C/L on the net. Remedy: give the net a "
+            "label without special characters in KiCad."
         ), []
 
     deck = build_isolated_deck(

@@ -124,7 +124,7 @@ def kicad_cli_env() -> Dict[str, str]:
 
 
 KICAD_CLI_NOT_FOUND = (
-    "kicad-cli nicht gefunden. KiCad 9.0+ installiert bzw. KICAD_APP_PATH korrekt gesetzt?"
+    "kicad-cli not found. Is KiCad 9.0+ installed and KICAD_APP_PATH set correctly?"
 )
 
 # seconds a netlist export may take
@@ -158,22 +158,22 @@ def export_netlist(schematic_path: str, netlist_format: str):
                                      stdin=subprocess.DEVNULL, env=kicad_cli_env(),
                                      timeout=KICAD_CLI_EXPORT_TIMEOUT)
         except OSError as e:
-            return None, f"kicad-cli konnte nicht gestartet werden: {e}"
+            return None, f"kicad-cli could not be started: {e}"
         except subprocess.TimeoutExpired:
-            return None, (f"kicad-cli-Export ({netlist_format}) nach "
-                          f"{KICAD_CLI_EXPORT_TIMEOUT} s abgebrochen.")
+            return None, (f"kicad-cli export ({netlist_format}) aborted after "
+                          f"{KICAD_CLI_EXPORT_TIMEOUT} s.")
 
         if process.returncode != 0:
             details = "\n".join(dict.fromkeys(process.stderr.strip().splitlines()))
             if not details:
-                details = "keine Fehlerausgabe"
-            error = (f"kicad-cli-Export ({netlist_format}) fehlgeschlagen "
-                     f"(Code {process.returncode}): {details}")
+                details = "no error output"
+            error = (f"kicad-cli export ({netlist_format}) failed "
+                     f"(code {process.returncode}): {details}")
 
         if os.path.exists(output_file):
             with open(output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
         elif error is None:
-            error = "kicad-cli meldete Erfolg, aber die Netlist-Datei wurde nicht erzeugt."
+            error = "kicad-cli reported success, but the netlist file was not created."
 
     return text, error

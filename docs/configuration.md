@@ -4,10 +4,13 @@ This guide explains how to configure the KiCad MCP Server to suit your environme
 
 ## Configuration Methods
 
-The KiCad MCP Server can be configured in two ways, depending on the setting:
+The KiCad MCP Server can be configured in three ways, depending on the setting:
 
-1. **Environment Variables**: only `KICAD_SEARCH_PATHS` is read from the environment (or a `.env` file)
-2. **`kicad-mcp-config.json` or code modifications**: `KICAD_USER_DIR` and `KICAD_APP_PATH` are read from `kicad-mcp-config.json` (auto-created on first run under Claude's "Claude Extensions Settings" folder), falling back to the platform defaults hardcoded in `kicad_mcp/config.py`. They are **not** environment variables.
+1. **Environment variable**: only `KICAD_SEARCH_PATHS` is read from the environment (or a `.env` file)
+2. **`kicad-mcp-config.json`**: `KICAD_USER_DIR` is read from this file (auto-created on first run under Claude's "Claude Extensions Settings" folder), falling back to the platform default in `kicad_mcp/config.py`
+3. **`kicad_mcp/config.py`**: `KICAD_APP_PATH` is set only here (`_DEFAULT_APP_PATH`)
+
+`KICAD_USER_DIR` and `KICAD_APP_PATH` are **not** environment variables.
 
 ## Core Configuration Options
 
@@ -26,7 +29,7 @@ These settings control where the server looks for KiCad projects:
 These settings control how the server locates KiCad:
 | Setting | How it's set | Description | Default Value | Example |
 |---------|-------------|-------------|---------------|---------|
-| `KICAD_APP_PATH` | `kicad-mcp-config.json` / `config.py` | Path to the KiCad application | `/Applications/KiCad/KiCad.app` (macOS)<br>`C:/Program Files/KiCad/9.0/` (Windows)<br>`/usr/share/kicad` (Linux) | `C:/Program Files/KiCad/9.0` |
+| `KICAD_APP_PATH` | `config.py` (`_DEFAULT_APP_PATH`) | Path to the KiCad installation. Its `kicad-cli` runs all exports and DRC checks, its ngspice library and XSPICE code models (`lib/ngspice`) run the SPICE simulation | `/Applications/KiCad/KiCad.app` (macOS)<br>`C:/Program Files/KiCad/9.0/` (Windows)<br>`/usr/share/kicad` (Linux) | `C:/Program Files/KiCad/9.0` |
 
 
 
@@ -90,7 +93,7 @@ To configure Claude Desktop to use the KiCad MCP Server:
 
 ### Environment Variables in Client Configuration
 
-You can also set `KICAD_SEARCH_PATHS` directly in the client configuration (this is the only setting actually read from the environment - `KICAD_APP_PATH`/`KICAD_USER_DIR` must be set via `kicad-mcp-config.json` or `config.py` as described above):
+You can also set `KICAD_SEARCH_PATHS` directly in the client configuration (this is the only setting actually read from the environment - `KICAD_USER_DIR` is set via `kicad-mcp-config.json`, `KICAD_APP_PATH` in `config.py`, as described above):
 
 ```json
 {
@@ -137,11 +140,11 @@ You can modify this in `kicad_mcp/utils/drc_history.py` if needed.
 
 ### macOS
 
-On macOS, KiCad is typically installed in `/Applications/KiCad/KiCad.app`. If you have multiple versions or a non-standard installation, set `KICAD_APP_PATH` to your KiCad.app path in `kicad-mcp-config.json` (or `config.py`).
+On macOS, KiCad is typically installed in `/Applications/KiCad/KiCad.app`. If you have multiple versions or a non-standard installation, set `KICAD_APP_PATH` to your KiCad.app path in `config.py`.
 
 ### Windows
 
-On Windows, KiCad is typically installed in `C:\Program Files\KiCad\9.0\`. If you have a different installation location, set `KICAD_APP_PATH` accordingly in `kicad-mcp-config.json` (or `config.py`).
+On Windows, KiCad is typically installed in `C:\Program Files\KiCad\9.0\`. If you have a different installation location, set `KICAD_APP_PATH` accordingly in `config.py`. The SPICE simulation uses the `ngspice.dll` in the `bin` folder of this installation.
 
 For `KICAD_SEARCH_PATHS` in the `.env` file on Windows, you can use either:
 - Forward slashes: `KICAD_SEARCH_PATHS=C:/Users/Username/Documents/KiCad`
@@ -154,7 +157,7 @@ On Linux, KiCad's location varies by distribution. Common paths include:
 - `/usr/local/share/kicad`
 - `/opt/kicad`
 
-Set `KICAD_APP_PATH` to the appropriate path in `kicad-mcp-config.json` (or `config.py`).
+Set `KICAD_APP_PATH` to the appropriate path in `config.py`. The SPICE simulation is currently supported on Windows only.
 
 ## Debugging Configuration Issues
 

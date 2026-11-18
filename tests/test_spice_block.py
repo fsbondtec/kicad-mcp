@@ -71,13 +71,13 @@ class TestSelectBlock:
         block = select_block(_rc_with_opamp(tmp_path), ["R99"], {"R1", "C1"})
 
         assert block["success"] is False
-        assert "Nicht im Schaltplan gefunden: R99" in block["error"]
+        assert "Not found in the schematic: R99" in block["error"]
 
     def test_seed_without_model(self, tmp_path):
         block = select_block(_rc_with_opamp(tmp_path), ["U1"], {"R1", "C1"})
 
         assert block["success"] is False
-        assert "Kein Simulationsmodell: U1" in block["error"]
+        assert "No simulation model: U1" in block["error"]
 
     def test_high_fanout_net_not_followed(self, tmp_path):
         bus = [_pin(f"R{i}", "1") for i in range(1, 13)]
@@ -166,11 +166,11 @@ class TestBlockWarnings:
 
         warnings = block_warnings(block)
 
-        assert any("abgeschnitten (max_size=60 reached)" in w for w in warnings)
-        assert any("Netz /bus (12 Anschluesse)" in w for w in warnings)
-        assert any("Offener Pin: R1 Pin 1 an Netz /open" in w for w in warnings)
-        assert any("KiCad meldete beim SPICE-Export" in w for w in warnings)
-        assert any("Mehrere Massenetze (GND, GND_HV)" in w for w in warnings)
+        assert any("truncated (max_size=60 reached)" in w for w in warnings)
+        assert any("Net /bus (12 connections)" in w for w in warnings)
+        assert any("Open pin: R1 pin 1 on net /open" in w for w in warnings)
+        assert any("KiCad reported during the SPICE export" in w for w in warnings)
+        assert any("Several ground nets (GND, GND_HV)" in w for w in warnings)
 
     def test_clean_block(self):
         block = {"global_nets_touched": ["GND"], "dangling": [], "high_fanout": []}

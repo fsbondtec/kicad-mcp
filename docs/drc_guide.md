@@ -18,7 +18,7 @@ It does this all by using the `kicad-cli` command-line tool to run DRC checks wi
 For optimal DRC functionality with KiCad 9.0+, you should have:
 
 - KiCad 9.0 or newer installed
-- `kicad-cli` available in your system PATH (included with KiCad 9.0+)
+- `kicad-cli` (included with KiCad 9.0+), found in the installation set by `KICAD_APP_PATH` or else on the system PATH
 
 ## Using DRC Features
 

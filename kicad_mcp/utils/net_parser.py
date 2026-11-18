@@ -47,7 +47,7 @@ class NetlistParser:
         """
         self.netlist, error = export_netlist(self.schematic_path, "kicadsexpr")
         if not self.netlist:
-            raise RuntimeError(f"Netzlisten-Export fehlgeschlagen: {error or 'leere Netzliste'}")
+            raise RuntimeError(f"Netlist export failed: {error or 'empty netlist'}")
         if error:
             print(f"Netlist export: {error}", file=sys.stderr)
 

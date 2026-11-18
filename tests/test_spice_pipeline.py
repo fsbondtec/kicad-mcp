@@ -23,7 +23,7 @@ DEMOS = _demo_dir()
 pytestmark = [
     pytest.mark.requires_kicad,
     pytest.mark.slow,
-    pytest.mark.skipif(DEMOS is None, reason="KiCad mit Simulations-Demos nicht installiert"),
+    pytest.mark.skipif(DEMOS is None, reason="KiCad with simulation demos not installed"),
 ]
 
 
@@ -79,9 +79,9 @@ class TestRoyer:
     def test_couplings_to_inductor_outside_reported(self, tmp_path):
         deck, error, warnings = self._deck(tmp_path, "L1")
 
-        coupling_warnings = [w for w in warnings if "Kopplung" in w]
+        coupling_warnings = [w for w in warnings if "coupling" in w]
         assert len(coupling_warnings) == 3
-        assert all("liegt nicht im Block" in w for w in coupling_warnings)
+        assert all("is not in the block" in w for w in coupling_warnings)
         assert not any(l.startswith(("K3", "K5", "K6")) for l in deck.splitlines())
 
 
@@ -107,4 +107,4 @@ class TestErrors:
         deck, error, warnings = assemble_deck(project, sch, "R99", [], ".op")
 
         assert deck is None
-        assert "Nicht im Schaltplan gefunden: R99" in error
+        assert "Not found in the schematic: R99" in error

@@ -55,7 +55,7 @@ def run_simulation(project_path: str, schematic_path: str, seed_components: str,
 
     field_errors = check_fields(analysis, ports, supplies)
     if field_errors:
-        return _invalid_result("Eingaben ungueltig - bitte diese Felder korrigieren.",
+        return _invalid_result("Invalid input - please correct these fields.",
                                field_errors)
 
     ports = [{"net": p["net"], "role": p.get("role"), "value": port_value(p),

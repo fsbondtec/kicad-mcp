@@ -104,7 +104,7 @@ function showPage(index) {{
   const img = document.createElement("img");
   img.alt = names[index] ?? "";
   img.onerror = () => {{
-    wrap.innerHTML = `<div id="error">Bild konnte nicht geladen werden:<br><code>${{urls[index]}}</code></div>`;
+    wrap.innerHTML = `<div id="error">Image could not be loaded:<br><code>${{urls[index]}}</code></div>`;
   }};
   img.onload = () => wrap.addEventListener("click", onWrapClick);
   img.src = urls[index];

@@ -78,20 +78,20 @@ def _load_code_models(bin_dir: str, warnings: list) -> None:
         for path in paths:
             path = path.replace("\\", "/")
             if "'" in path:
-                failed.append(f"{os.path.basename(path)} (Pfad mit Apostroph)")
+                failed.append(f"{os.path.basename(path)} (path contains an apostrophe)")
                 continue
             try:
                 ngspice.exec_command(f"codemodel '{path}'")
             except Exception as e:
                 failed.append(f"{os.path.basename(path)} ({type(e).__name__})")
     except Exception as e:
-        failed.append(f"ngspice nicht bereit ({type(e).__name__}: {e})")
+        failed.append(f"ngspice not ready ({type(e).__name__}: {e})")
 
     if not paths:
-        failed.append(f"keine .cm-Dateien unter {cm_dir}")
+        failed.append(f"no .cm files in {cm_dir}")
     if failed:
-        warnings.append("Code-Modelle nicht geladen: " + ", ".join(failed) + " - Bauteile mit "
-                        "POLY-Quellen (viele Hersteller-Opamps) oder Digitalmodellen scheitern.")
+        warnings.append("Code models not loaded: " + ", ".join(failed) + " - parts with POLY "
+                        "sources (many vendor opamp models) or digital models will fail.")
     else:
         _code_models_loaded = True
 
@@ -122,7 +122,7 @@ def _plot_svg(ngspice, analysis, nodes, warnings, max_nodes=8):
     if not shown:
         return None
     if len(shown) > max_nodes:
-        warnings.append(f"Diagramm zeigt nur die ersten {max_nodes} von {len(shown)} Knoten.")
+        warnings.append(f"Diagram shows only the first {max_nodes} of {len(shown)} nodes.")
         shown = shown[:max_nodes]
 
     func = "vdb" if analysis == "ac" else "v"
@@ -137,10 +137,10 @@ def _plot_svg(ngspice, analysis, nodes, warnings, max_nodes=8):
                 svg = f.read()
             start = svg.find("<svg")
             if start < 0:
-                raise ValueError("ngspice hat kein SVG geschrieben.")
+                raise ValueError("ngspice wrote no SVG.")
             return svg[start:]
     except Exception as e:
-        warnings.append(f"Diagramm konnte nicht erstellt werden: {type(e).__name__}: {e}")
+        warnings.append(f"Diagram could not be created: {type(e).__name__}: {e}")
         return None
 
 
@@ -180,7 +180,7 @@ def run_deck(deck: str) -> dict:
         bin_dir = _configure_ngspice_library()
     except ImportError:
         out["errors"].append(
-            "PySpice ist nicht installiert. Installiere es im Server-Env "
+            "PySpice is not installed - install it in the server environment (pip install PySpice)."
         )
         return out
 
@@ -217,7 +217,7 @@ def run_deck(deck: str) -> dict:
             
             if out["analysis"] not in ("op", "ac", "tran") or any(d.size == 0 for d in nodes.values()):
                 out["analysis"] = None
-                raise RuntimeError("ngspice hat keine Simulationsergebnisse geliefert.")
+                raise RuntimeError("ngspice returned no simulation results.")
             if out["analysis"] == "op":
                 out["voltages"] = {name: float(data[0].real) for name, data in nodes.items()}
             else:
@@ -245,12 +245,12 @@ def run_deck(deck: str) -> dict:
             if any("cannot recover" in record.lower() for record in collector.records):
                 try:
                     _reload_ngspice()
-                    out["warnings"].append("ngspice wurde nach diesem Fehler neu geladen, die "
-                                           "naechste Simulation laeuft wieder normal.")
+                    out["warnings"].append("ngspice was reloaded after this error, the next "
+                                           "simulation runs normally.")
                 except Exception as e:
-                    out["errors"].append(f"ngspice konnte nach dem Fehler nicht neu geladen werden "
-                                         f"({type(e).__name__}: {e}) - weitere Simulationen "
-                                         "scheitern bis zum Neustart von Claude Desktop.")
+                    out["errors"].append(f"ngspice could not be reloaded after the error "
+                                         f"({type(e).__name__}: {e}) - further simulations "
+                                         "fail until Claude Desktop is restarted.")
 
     for line in dict.fromkeys(collector.records):
         low = line.lower()
@@ -283,16 +283,16 @@ def _summary(result):
     """One-line status of a run_deck() result."""
     sweep = result["sweep"]
     if result["validation_failed"]:
-        return "Validierung FEHLGESCHLAGEN - ngspice wurde nicht gestartet."
+        return "Validation FAILED - ngspice was not started."
     if not result["success"]:
-        return "Simulation FEHLGESCHLAGEN."
+        return "Simulation FAILED."
     if result["analysis"] == "ac":
-        return (f"Simulation OK (Frequenzgang {_si(sweep['axis'][0], 'Hz')} - "
+        return (f"Simulation OK (frequency response {_si(sweep['axis'][0], 'Hz')} - "
                 f"{_si(sweep['axis'][-1], 'Hz')}).")
     if result["analysis"] == "tran":
-        return (f"Simulation OK (Zeitverlauf {_si(sweep['axis'][0], 's')} - "
-                f"{_si(sweep['axis'][-1], 's')}, {len(sweep['axis'])} Punkte).")
-    return "Simulation OK (Arbeitspunkt gelöst)."
+        return (f"Simulation OK (transient {_si(sweep['axis'][0], 's')} - "
+                f"{_si(sweep['axis'][-1], 's')}, {len(sweep['axis'])} points).")
+    return "Simulation OK (operating point solved)."
 
 
 def _magnitude_db(values):
@@ -329,9 +329,9 @@ def _passband(freqs, db):
     if lower and upper:
         return f"{lower} - {upper}"
     if upper and flat(0, 1):
-        return f"bis {upper}"
+        return f"up to {upper}"
     if lower and flat(-2, -1):
-        return f"ab {lower}"
+        return f"from {lower}"
     return None
 
 
@@ -362,7 +362,7 @@ def result_tables(result: dict, deck: str) -> dict:
         freqs = sweep["axis"]
         for node, values in sorted(sweep["nodes"].items()):
             if not np.abs(values).any():
-                voltages.append({"name": name(node), "corner": "-", "gain": "kein AC-Anteil",
+                voltages.append({"name": name(node), "corner": "-", "gain": "no AC component",
                                  "phase": "-"})
                 continue
             db = _magnitude_db(values)
@@ -402,12 +402,12 @@ def _format_currents(result):
     if not currents:
         return []
 
-    lines = ["", "Ströme (positiv = in den Anschluss hinein; negativer Quellenstrom = Quelle liefert):"]
+    lines = ["", "Currents (positive = into the terminal; negative source current = source delivers):"]
     for name, current in currents.items():
         if result["analysis"] == "tran":
             time = result["sweep"]["axis"]
             rms = _rms(current, time)
-            lines.append(f"  {name}: max {_si(np.abs(current).max(), 'A')}, eff {_si(rms, 'A')}")
+            lines.append(f"  {name}: max {_si(np.abs(current).max(), 'A')}, rms {_si(rms, 'A')}")
         else:
             lines.append(f"  {name} = {_si(current[0], 'A')}")
     return lines
@@ -420,7 +420,7 @@ def format_result(result: dict) -> str:
 
     if result["voltages"]:
         lines.append("")
-        lines.append("Knotenspannungen:")
+        lines.append("Node voltages:")
         for node, v in sorted(result["voltages"].items()):
             lines.append(f"  {node} = {v:.4g} V")
 
@@ -430,16 +430,16 @@ def format_result(result: dict) -> str:
         log_f = np.log10(freqs[positive])
         decades = (10.0 ** np.arange(np.ceil(log_f[0]), log_f[-1] + 1e-9)
                    if positive.size else [])
-        lines += ["", "Frequenzgang (Betrag / Phase):"]
+        lines += ["", "Frequency response (magnitude / phase):"]
 
         for node, values in sorted(sweep["nodes"].items()):
             if not np.abs(values).any():
-                lines.append(f"  {node}: kein AC-Anteil")
+                lines.append(f"  {node}: no AC component")
                 continue
 
             db = _magnitude_db(values)
             passband = _passband(freqs, db)
-            lines.append(f"  {node}" + (f"  (Durchlass, -3 dB: {passband})" if passband else ""))
+            lines.append(f"  {node}" + (f"  (pass band, -3 dB: {passband})" if passband else ""))
 
             for f in decades:
                 i = positive[int(np.argmin(np.abs(log_f - np.log10(f))))]
@@ -447,23 +447,23 @@ def format_result(result: dict) -> str:
                              f"{np.angle(values[i], deg=True):7.1f}°")
 
     if sweep and result["analysis"] == "tran":
-        lines += ["", "Zeitverlauf (min / max / Ende):"]
+        lines += ["", "Transient (min / max / end):"]
         for node, values in sorted(sweep["nodes"].items()):
             values = values.real
             lines.append(f"  {node}: min {_si(values.min(), 'V')}, max {_si(values.max(), 'V')}, "
-                         f"Ende {_si(values[-1], 'V')}")
+                         f"end {_si(values[-1], 'V')}")
 
     lines += _format_currents(result)
 
     if result["errors"]:
         lines.append("")
-        lines.append("Fehler:")
+        lines.append("Errors:")
         for e in result["errors"]:
             lines.append(f"  - {e}")
 
     if result["warnings"]:
         lines.append("")
-        lines.append("Warnungen:")
+        lines.append("Warnings:")
         for w in result["warnings"]:
             lines.append(f"  - {w}")
 

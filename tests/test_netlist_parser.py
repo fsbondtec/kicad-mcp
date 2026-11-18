@@ -39,7 +39,7 @@ class TestExportNetlist:
     @patch("kicad_mcp.utils.net_parser.export_netlist")
     def test_file_written_despite_error_code_is_kept(self, mock_export):
         """kicad-cli exits with an error (e.g. missing simulation models) but wrote the file."""
-        mock_export.return_value = ("(export)", "kicad-cli-Export (kicadsexpr) fehlgeschlagen (Code 2)")
+        mock_export.return_value = ("(export)", "kicad-cli export (kicadsexpr) failed (code 2)")
         parser = _parser()
 
         parser.export_netlist()
@@ -48,17 +48,17 @@ class TestExportNetlist:
 
     @patch("kicad_mcp.utils.net_parser.export_netlist")
     def test_no_file_raises(self, mock_export):
-        mock_export.return_value = (None, "kicad-cli nicht gefunden.")
+        mock_export.return_value = (None, "kicad-cli not found.")
         parser = _parser()
 
-        with pytest.raises(RuntimeError, match="kicad-cli nicht gefunden"):
+        with pytest.raises(RuntimeError, match="kicad-cli not found"):
             parser.export_netlist()
 
     @patch("kicad_mcp.utils.net_parser.export_netlist")
     def test_empty_file_raises(self, mock_export):
         mock_export.return_value = ("", None)
 
-        with pytest.raises(RuntimeError, match="leere Netzliste"):
+        with pytest.raises(RuntimeError, match="empty netlist"):
             _parser().export_netlist()
 
 

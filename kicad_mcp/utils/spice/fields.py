@@ -8,22 +8,22 @@ from kicad_mcp.utils.spice.deck import MEGA_M_RE, SPICE_VALUE_RE, spice_float
 
 # number fields of each analysis: (key, label, example), 'optional' = not required, starts empty
 ANALYSIS_FIELDS = {
-    ".ac": [("ac_points", "Punkte", "20"), ("ac_fstart", "Startfrequenz", "1"),
-            ("ac_fstop", "Stoppfrequenz", "1Meg")],
-    ".tran": [("tran_step", "Schrittweite", "1u"), ("tran_stop", "Endzeit", "5m"),
-              ("tran_start", "Startzeit", "optional"), ("tran_max", "Max. Schritt", "optional")],
+    ".ac": [("ac_points", "Points", "20"), ("ac_fstart", "Start frequency", "1"),
+            ("ac_fstop", "Stop frequency", "1Meg")],
+    ".tran": [("tran_step", "Step", "1u"), ("tran_stop", "Stop time", "5m"),
+              ("tran_start", "Start time", "optional"), ("tran_max", "Max. step", "optional")],
 }
 ANALYSIS_DEFAULTS = {"analysis": ".op", "ac_sweep": "dec", "tran_uic": False,
                      **{key: "" if example == "optional" else example
                         for fields in ANALYSIS_FIELDS.values() for key, _, example in fields}}
 
 SOURCE_FIELDS = {
-    "DC": [("dc", "Spannung", "5")],
-    "PULSE": [("v1", "Low", "0"), ("v2", "High", "5"), ("td", "Verzögerung", "0"),
-              ("tr", "Anstieg", "1u"), ("tf", "Abfall", "1u"), ("pw", "Pulsbreite", "50u"),
-              ("per", "Periode", "100u")],
-    "SIN": [("vo", "Offset", "0"), ("va", "Amplitude", "1"), ("freq", "Frequenz", "1k"),
-            ("sin_td", "Verzögerung", "optional")],
+    "DC": [("dc", "Voltage", "5")],
+    "PULSE": [("v1", "Low", "0"), ("v2", "High", "5"), ("td", "Delay", "0"),
+              ("tr", "Rise time", "1u"), ("tf", "Fall time", "1u"), ("pw", "Pulse width", "50u"),
+              ("per", "Period", "100u")],
+    "SIN": [("vo", "Offset", "0"), ("va", "Amplitude", "1"), ("freq", "Frequency", "1k"),
+            ("sin_td", "Delay", "optional")],
 }
 SOURCE_KEYS = ["type", "ac"] + [key for fields in SOURCE_FIELDS.values() for key, _, _ in fields]
 
@@ -74,7 +74,7 @@ def check_fields(analysis: dict, ports: list, supplies: list) -> list:
         list of error messages naming the field, empty if everything is fine.
     """
 
-    fields = [(f"Analyse, {label}", analysis.get(key), example != "optional")
+    fields = [(f"Analysis, {label}", analysis.get(key), example != "optional")
               for key, label, example in ANALYSIS_FIELDS.get(analysis.get("analysis"), [])]
 
     errors = []
@@ -84,14 +84,14 @@ def check_fields(analysis: dict, ports: list, supplies: list) -> list:
         if port.get("role") == "input":
             sources.append((where, port.get("source") or {}, True))
         elif port.get("role") == "load":
-            fields.append((f"{where}, Wert", port.get("load_value"), True))
+            fields.append((f"{where}, value", port.get("load_value"), True))
     for supply in supplies or []:
-        sources.append((f"Versorgung {supply['net']}", supply.get("source") or {}, False))
+        sources.append((f"Supply {supply['net']}", supply.get("source") or {}, False))
 
     for where, source, needs_value in sources:
         kind = source.get("type") or "DC"
         source_fields = [(label, source.get(key)) for key, label, _ in SOURCE_FIELDS[kind]]
-        source_fields.append(("AC-Amplitude", source.get("ac")))
+        source_fields.append(("AC amplitude", source.get("ac")))
 
         has_value = False
         for label, value in source_fields:
@@ -99,20 +99,20 @@ def check_fields(analysis: dict, ports: list, supplies: list) -> list:
             if str(value or "").strip():
                 has_value = True
         if needs_value and not has_value:
-            errors.append(f"{where}: keine Quellwerte eingetragen.")
+            errors.append(f"{where}: no source values entered.")
 
     for where, value, required in fields:
         text = str(value or "").strip()
         if not text:
             if required:
-                errors.append(f"{where}: Feld ist leer.")
+                errors.append(f"{where}: field is empty.")
         elif "," in text:
-            errors.append(f"{where}: '{text}' - Punkt statt Komma verwenden.")
+            errors.append(f"{where}: '{text}' - use a point instead of a comma.")
         elif not SPICE_VALUE_RE.match(text):
-            errors.append(f"{where}: '{text}' ist keine SPICE-Zahl (z. B. 1u, 4.7k, 1Meg).")
+            errors.append(f"{where}: '{text}' is not a SPICE number (e.g. 1u, 4.7k, 1Meg).")
         elif MEGA_M_RE.match(text):
-            errors.append(f"{where}: '{text}' - M bedeutet in SPICE Milli. Fuer Mega 'Meg' "
-                          "schreiben (1Meg), fuer Milli 'm' (1m).")
+            errors.append(f"{where}: '{text}' - M means milli in SPICE. Write 'Meg' for mega "
+                          "(1Meg), 'm' for milli (1m).")
 
     # check numbers make a runnable analysis
     if not errors:
@@ -130,24 +130,24 @@ def _range_errors(a: dict) -> list:
     if a.get("analysis") == ".ac":
         points, fstart, fstop = num("ac_points"), num("ac_fstart"), num("ac_fstop")
         if points < 1:
-            errors.append("Analyse, Punkte: mindestens 1.")
+            errors.append("Analysis, Points: at least 1.")
         if fstart <= 0 and a.get("ac_sweep") != "lin":
-            errors.append("Analyse, Startfrequenz: muss bei dec/oct groesser als 0 sein.")
+            errors.append("Analysis, Start frequency: must be greater than 0 for dec/oct.")
         if fstop <= fstart:
-            errors.append("Analyse, Stoppfrequenz: muss groesser als die Startfrequenz sein.")
+            errors.append("Analysis, Stop frequency: must be greater than the start frequency.")
     elif a.get("analysis") == ".tran":
         step, stop, start, tmax = (num("tran_step"), num("tran_stop"), num("tran_start"),
                                    num("tran_max"))
         if step <= 0:
-            errors.append("Analyse, Schrittweite: muss groesser als 0 sein.")
+            errors.append("Analysis, Step: must be greater than 0.")
         if stop <= 0:
-            errors.append("Analyse, Endzeit: muss groesser als 0 sein.")
+            errors.append("Analysis, Stop time: must be greater than 0.")
         elif step > stop:
-            errors.append("Analyse, Schrittweite: groesser als die Endzeit.")
+            errors.append("Analysis, Step: greater than the stop time.")
         if start is not None and not 0 <= start < stop:
-            errors.append("Analyse, Startzeit: muss zwischen 0 und der Endzeit liegen.")
+            errors.append("Analysis, Start time: must be between 0 and the stop time.")
         if tmax is not None and tmax <= 0:
-            errors.append("Analyse, Max. Schritt: muss groesser als 0 sein.")
+            errors.append("Analysis, Max. step: must be greater than 0.")
     return errors
 
 

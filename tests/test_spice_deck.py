@@ -204,7 +204,7 @@ class TestFilterBlock:
         filtered = self._filtered()
 
         assert not any(d.startswith("K2") for d in filtered["directives"])
-        assert any("Kopplung K2" in w and "L9 liegt nicht im Block" in w
+        assert any("coupling K2" in w and "L9 is not in the block" in w
                    for w in filtered["warnings"])
 
     def test_coupling_entirely_outside_dropped_silently(self):
@@ -216,17 +216,17 @@ class TestFilterBlock:
     def test_node_directive_outside_and_unknown_format_reported(self):
         warnings = self._filtered()["warnings"]
 
-        assert any(".ic fuer /far" in w for w in warnings)
-        assert any("I(L1)=1m" in w and "Format nicht erkannt" in w for w in warnings)
+        assert any(".ic for /far" in w for w in warnings)
+        assert any("I(L1)=1m" in w and "format not recognised" in w for w in warnings)
 
     def test_text_element_touching_block_reported(self):
         """Rmix comes from a schematic text, not from a symbol."""
         warnings = self._filtered()["warnings"]
 
-        assert any("'Rmix /out GND 200'" in w and "haengt an /out" in w for w in warnings)
+        assert any("'Rmix /out GND 200'" in w and "connected to /out" in w for w in warnings)
 
     def test_warnings_ask_to_consider_result(self):
-        assert all("im Ergebnis beruecksichtigen" in w for w in self._filtered()["warnings"])
+        assert all("take this into account when reading a successful result" in w for w in self._filtered()["warnings"])
 
     def test_text_element_only_at_reference_not_reported(self):
         sp = _parsed(".title t\nRg /other GND 1k\nV1 /in GND DC 1\nR1 /in GND 1k\n.end")
@@ -288,17 +288,17 @@ class TestValidateDeck:
     def test_no_source(self):
         errors = validate_deck(_deck("R1 a 0 1k", ".op"))["errors"]
 
-        assert any("Keine Quelle" in e for e in errors)
+        assert any("No source" in e for e in errors)
 
     def test_no_analysis(self):
         errors = validate_deck(_deck("V1 a 0 DC 1", "R1 a 0 1k"))["errors"]
 
-        assert any("Keine Analyse" in e for e in errors)
+        assert any("No analysis" in e for e in errors)
 
     def test_unsupported_analysis(self):
         errors = validate_deck(_deck("V1 a 0 DC 1", "R1 a 0 1k", ".dc V1 0 5 1"))["errors"]
 
-        assert any("'.dc' nicht unterstuetzt" in e for e in errors)
+        assert any("'.dc' is not supported" in e for e in errors)
 
     def test_settings_are_no_analysis(self):
         """.temp / .options / .ic in front of the analysis must not be read as the analysis."""
@@ -310,32 +310,32 @@ class TestValidateDeck:
     def test_ac_parameters_checked(self):
         errors = validate_deck(_deck("V1 a 0 AC 1", "R1 a 0 1k", ".ac dec 20 1"))["errors"]
 
-        assert any(".ac braucht 'dec|oct|lin" in e for e in errors)
+        assert any(".ac needs 'dec|oct|lin" in e for e in errors)
 
     def test_ac_needs_ac_source(self):
         errors = validate_deck(_deck("V1 a 0 DC 1", "R1 a 0 1k", ".ac dec 20 1 1Meg"))["errors"]
 
-        assert any(".ac braucht eine AC-Quelle" in e for e in errors)
+        assert any(".ac needs an AC source" in e for e in errors)
 
     def test_node_named_ac_is_no_ac_source(self):
         errors = validate_deck(_deck("V1 /AC 0 DC 1", "R1 /AC 0 1k", ".ac dec 20 1 1Meg"))["errors"]
 
-        assert any(".ac braucht eine AC-Quelle" in e for e in errors)
+        assert any(".ac needs an AC source" in e for e in errors)
 
     def test_tran_parameters_checked(self):
         errors = validate_deck(_deck("V1 a 0 DC 1", "R1 a 0 1k", ".tran 1u"))["errors"]
 
-        assert any(".tran braucht" in e for e in errors)
+        assert any(".tran needs" in e for e in errors)
 
     def test_passive_without_value(self):
         errors = validate_deck(_deck("V1 a 0 DC 1", "R1 a 0", ".op"))["errors"]
 
-        assert "R1: kein Wert (Bauteil DNP/NC?)." in errors
+        assert "R1: no value (part DNP/NC?)." in errors
 
     def test_passive_value_no_number(self):
         errors = validate_deck(_deck("V1 a 0 DC 1", "L2 a 0 FB_bead", ".op"))["errors"]
 
-        assert "L2: Wert 'FB_bead' ist keine SPICE-Zahl." in errors
+        assert "L2: value 'FB_bead' is not a SPICE number." in errors
 
     def test_parameter_expression_accepted(self):
         result = validate_deck(_deck(".param rv=2k", "V1 a 0 DC 1", "R1 a 0 {rv}", ".op"))
@@ -347,32 +347,32 @@ class TestValidateDeck:
         warnings = validate_deck(_deck("V1 a 0 DC 1", "R1 a b 1k", f"C1 b 0 {value}", ".op"))["warnings"]
         number = value[:-1]
 
-        assert f"C1: '{value}' bedeutet in SPICE {number} Femtofarad. Fuer {number} Farad '{number}' schreiben." in warnings
+        assert f"C1: '{value}' means {number} femtofarad in SPICE. For {number} farad write '{number}'." in warnings
 
     @pytest.mark.parametrize("value", ["100nF", "10uF", "1f", "1"])
     def test_other_capacitances_quiet(self, value):
         warnings = validate_deck(_deck("V1 a 0 DC 1", "R1 a b 1k", f"C1 b 0 {value}", ".op"))["warnings"]
 
-        assert not any("Femtofarad" in w for w in warnings)
+        assert not any("femtofarad" in w for w in warnings)
 
     def test_source_shorted(self):
         """ngspice treats a node named gnd as ground."""
         errors = validate_deck(_deck("V1 GND 0 DC 1", "R1 a 0 1k", ".op"))["errors"]
 
-        assert any("V1: beide Anschluesse am selben Knoten" in e for e in errors)
+        assert any("V1: both terminals on the same node" in e for e in errors)
 
     def test_parallel_sources(self):
         errors = validate_deck(_deck("V1 a 0 DC 1", "V2 a 0 DC 2", "R1 a 0 1k", ".op"))["errors"]
 
-        assert any("V2 und V1 liegen parallel" in e for e in errors)
+        assert any("V2 and V1 are in parallel" in e for e in errors)
 
     def test_node_without_dc_path(self):
         errors = validate_deck(_deck("V1 a 0 DC 1", "R1 a b 1k", "C1 b c 1n", "C2 c 0 1n", ".op"))["errors"]
 
-        assert any("Kein DC-Pfad nach Masse: c" in e for e in errors)
+        assert any("No DC path to ground: c" in e for e in errors)
 
     def test_coupling_is_no_floating_node(self):
-        """K names inductors, not nodes: no 'Kein DC-Pfad: L1, L2'."""
+        """K names inductors, not nodes: no 'No DC path: L1, L2'."""
         result = validate_deck(_deck("V1 a 0 DC 1", "L1 a 0 1m", "L2 b 0 1m", "R1 b 0 1k",
                                      "K1 L1 L2 0.9", ".op"))
 

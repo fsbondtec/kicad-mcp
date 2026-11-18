@@ -15,6 +15,8 @@ This guide helps you troubleshoot common issues with the KiCad MCP Server.
 1. **Missing Dependencies**
    - **Error:** `ModuleNotFoundError: No module named 'mcp'`
    - **Solution:** Ensure you have installed the required packages, e.g. `uv sync` or `conda env create -f environment.yml` (see [README](../README.md#build))
+   - **Error:** `ModuleNotFoundError: No module named 'prefab_ui'`
+   - **Solution:** The SPICE simulation form needs `fastmcp` with its `apps` extra. Install the dependencies again from the current `pyproject.toml` / `environment.yml`, or add it with `pip install "fastmcp[apps]"`
 
 2. **Python Version**
    - **Error:** Syntax errors or unsupported features
@@ -106,7 +108,7 @@ This guide helps you troubleshoot common issues with the KiCad MCP Server.
 
 2. **Non-standard KiCad Installation**
    - **Problem:** KiCad installed in a non-standard location
-   - **Solution:** Set `KICAD_APP_PATH` in `kicad-mcp-config.json` (auto-created under Claude's "Claude Extensions Settings" folder) or directly in `kicad_mcp/config.py` - it is **not** an environment variable
+   - **Solution:** Set `KICAD_APP_PATH` (`_DEFAULT_APP_PATH` in `kicad_mcp/config.py`) - it is **not** an environment variable and not read from `kicad-mcp-config.json`
 
 3. **Python Path Issues**
    - **Problem:** KiCad Python modules not in Python path
@@ -171,11 +173,51 @@ To diagnose issues, check the server logs:
 
 1. **KiCad CLI Tools Not Found**
    - **Problem:** Command-line tools not available
-   - **Solution:** Ensure you have a complete KiCad installation with CLI tools
+   - **Solution:** Ensure you have a complete KiCad installation with CLI tools. The server looks for `kicad-cli` in the installation set by `KICAD_APP_PATH` and only then on the system `PATH`
 
 2. **PCB File Issues**
    - **Problem:** Invalid or corrupted PCB file
    - **Solution:** Verify the PCB file can be opened in KiCad
+
+## SPICE Simulation Issues
+
+See the [SPICE Simulation Guide](spice_guide.md) for how the simulation works. The messages below appear in the form's result or in Claude's answer.
+
+1. **kicad-cli not found**
+   - **Problem:** The KiCad installation in `KICAD_APP_PATH` does not exist (e.g. a different version is installed)
+   - **Solution:** Set `_DEFAULT_APP_PATH` in `kicad_mcp/config.py` to your KiCad installation and restart the client. The simulation uses the ngspice of exactly this installation
+
+2. **No simulation model: U1**
+   - **Problem:** A seed component has no SPICE model
+   - **Solution:** Assign one in KiCad (*Symbol Properties → Simulation Model*) or start from another component
+
+3. **No DC path to ground: ...**
+   - **Problem:** The listed nodes have no DC connection to node 0, e.g. an `output` port behind a capacitor
+   - **Solution:** Set that port to `load` (e.g. `R 1G`), or grow the block with more seeds
+
+4. **no ground net (node 0) on the block**
+   - **Problem:** No ground net was found or chosen
+   - **Solution:** Pick the reference net in the form, or add a ground symbol to the circuit's reference net in KiCad
+
+5. **net ... has no known name in the SPICE export**
+   - **Problem:** KiCad renames nets with special characters in the SPICE export, and no resistor, capacitor or inductor on the net shows the new name
+   - **Solution:** Give the net a label without special characters in KiCad
+
+6. **MIF-ERROR - unable to find definition of model ...**
+   - **Problem:** ngspice's XSPICE code models are not loaded (needed for `POLY` sources in many vendor opamp models and for digital parts). A warning *"Code models not loaded"* names the files and the reason
+   - **Solution:** Check that `lib/ngspice/*.cm` exists in the KiCad installation and that its path contains no apostrophe
+
+7. **Warnings starting with "Not taken over"**
+   - **Problem:** Part of the schematic that affects the block was not taken into the simulation (a coupling to an inductor outside the block, initial conditions for nodes outside, a component written as schematic text)
+   - **Solution:** Take it into account when you read the result, or grow the block so it includes the missing parts
+
+8. **unrecognized parameter (...) - ignored**
+   - **Problem:** A vendor model uses parameters that only PSpice knows
+   - **Solution:** None needed: ngspice skips them and the result is valid; the message is shown as a warning
+
+9. **ngspice was reloaded after this error**
+   - **Problem:** A deck error (e.g. a broken model line) left ngspice in a state it cannot recover from
+   - **Solution:** Fix the cause named in the errors; the next simulation runs normally. If you instead get *"ngspice could not be reloaded ..."*, restart the MCP client
 
 ## Environment-Specific Issues
 
@@ -197,7 +239,7 @@ To diagnose issues, check the server logs:
 
 2. **Command Execution**
    - **Problem:** Issues launching KiCad from the server
-   - **Solution:** Ensure `KICAD_APP_PATH` is set correctly in `kicad-mcp-config.json` or `kicad_mcp/config.py`
+   - **Solution:** Ensure `KICAD_APP_PATH` (`_DEFAULT_APP_PATH` in `kicad_mcp/config.py`) points at your KiCad installation
 
 ### Linux Issues
 

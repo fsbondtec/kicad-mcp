@@ -111,14 +111,14 @@ def select_block(graph, seed_refs, simulatable, max_hops=DEFAULT_MAX_HOPS,
     unknown = [r for r in seeds if graph.nodes.get(r, {}).get("type") != "component"]
     if unknown:
         return {"success": False,
-                "error": f"Nicht im Schaltplan gefunden: {', '.join(unknown)} - "
-                         "Referenz pruefen (z. B. R1, C3)."}
+                "error": f"Not found in the schematic: {', '.join(unknown)} - "
+                         "check the reference (e.g. R1, C3)."}
 
     no_model = [r for r in seeds if r not in simulatable and not is_permeable(graph.nodes[r])]
     if no_model:
         return {"success": False,
-                "error": f"Kein Simulationsmodell: {', '.join(no_model)} - in KiCad unter "
-                         "Symboleigenschaften -> Simulationsmodell zuweisen."}
+                "error": f"No simulation model: {', '.join(no_model)} - assign one in KiCad under "
+                         "Symbol Properties -> Simulation Model."}
 
     block = set(seeds)
     high_fanout = {}
@@ -214,26 +214,26 @@ def block_warnings(block):
     warnings = []
     if block.get("truncated"):
         warnings.append(
-            f"Block wurde abgeschnitten ({block['truncation_reason']}) - "
-            "die Schnittstellen erscheinen als Ports."
+            f"Block was truncated ({block['truncation_reason']}) - "
+            "the nets at the cut appear as ports."
         )
     for n in block.get("high_fanout", []):
         warnings.append(
-            f"Netz {n['net']} ({n['fanout']} Anschluesse) nicht weiterverfolgt - "
-            "vermutlich Bus oder Sammelnetz."
+            f"Net {n['net']} ({n['fanout']} connections) not followed - "
+            "probably a bus or shared net."
         )
     for d in block.get("dangling", []):
         warnings.append(
-            f"Offener Pin: {d['pin']['component']} Pin {d['pin']['pin']} an Netz {d['net']}."
+            f"Open pin: {d['pin']['component']} pin {d['pin']['pin']} on net {d['net']}."
         )
     if block.get("export_warning"):
-        warnings.append(f"KiCad meldete beim SPICE-Export: {block['export_warning']}")
+        warnings.append(f"KiCad reported during the SPICE export: {block['export_warning']}")
     rails = block["global_nets_touched"]
     grounds = ground_nets(rails)
     if len(grounds) > 1:
         warnings.append(
-            f"Mehrere Massenetze ({', '.join(grounds)}), Bezugsnetz pruefen. Bei den "
-            "uebrigen 0 eintragen = mit Masse verbunden, leer lassen = getrennt."
+            f"Several ground nets ({', '.join(grounds)}), check the reference net. For the "
+            "others enter 0 = connected to ground, leave empty = separate."
         )
     return warnings
 

@@ -48,6 +48,7 @@ kicad-mcp/
 │   │   ├── project_tools.py                            # Project management tools
 │   │   ├── drc_tools.py                                # DRC check tools
 │   │   ├── graph_tools.py                              # Analyse schematic/PCB in graph structure, path highlighting
+│   │   ├── spice_tools.py                              # SPICE simulation UI and run_simulation
 │   │   └── rag_tools.py                                # Datasheet search tools
 │   └── utils/                                          # Utility functions
 │       ├── __init__.py
@@ -57,8 +58,15 @@ kicad-mcp/
 │       ├── drc_history.py                              # DRC history tracking
 │       ├── graph_analysis.py                           # Methods to create and search in Graphs
 │       ├── wire_graph.py                               # Geometric wire/label graph for schematics
-│       ├── kicad_cli.py                                # find Kicad CLI
 │       ├── net_parser.py                               # Parse Netlist
+│       ├── schematic_cache.py                          # Cached kicad-cli exports per schematic (graph, SPICE netlist)
+│       ├── spice/                                      # SPICE simulation of a block
+│       │   ├── __init__.py
+│       │   ├── block.py                                # Grow a simulatable block from seed components
+│       │   ├── deck.py                                 # Seeds -> block -> isolated SPICE deck, deck validation
+│       │   ├── fields.py                               # Simulation form fields -> SPICE text, field checks
+│       │   ├── ui.py                                   # prefab_ui view of the simulation UI
+│       │   └── runner.py                               # Run a deck through ngspice, format the result
 │       ├── svg_utils.py                                # SVG plotting and path highlighting
 │       ├── svg_file_server.py                          # Local HTTP server for SVG previews
 │       ├── get_datasheets.py                           # Datasheet download pipeline
@@ -196,22 +204,47 @@ def create_server() -> FastMCP:
 
 ## Testing
 
-To run tests:
+Run the whole suite from the project folder:
 
 ```bash
-# Run all tests
 pytest
-
-# Run specific tests:
-pytest tests/test_svg_utils.py::TestResolvePcbNets::test_exact_match_passes_through
 ```
+
+Tests that need KiCad carry markers, so the suite also runs on a machine without KiCad:
+
+| Marker | Meaning |
+|--------|---------|
+| `requires_kicad` | Needs `kicad-cli` and ngspice of the KiCad installation in `KICAD_APP_PATH`; skipped when `kicad-cli` is not found |
+| `slow` | Takes more than a few seconds |
+
+```bash
+pytest -m "not requires_kicad"
+
+# One file or class
+pytest --no-cov tests/test_spice_runner.py::TestPassband
+
+# Show every test name
+pytest -v
+```
+
+The SPICE simulation is covered by:
+
+| File | Covers |
+|------|--------|
+| `test_spice_deck.py` | Value conversion, parsing the SPICE export, building and checking the deck |
+| `test_spice_fields.py` | Form fields: analysis line, sources, input checks |
+| `test_spice_block.py` | Growing the block, ports, ground nets, port role suggestions |
+| `test_spice_runner.py` | Result formatting and pass band; ngspice runs (`requires_kicad`) |
+| `test_spice_pipeline.py` | Whole pipeline on copies of KiCad's simulation demos (`requires_kicad`, `slow`) |
+
+When you fix a bug, add a test that fails without the fix.
 
 ## Debugging
 
 For debugging, use:
 
 1. The Python debugger (pdb)
-2. Print statements to the console (captured in Claude Desktop logs)
+2. Output to stderr - `print(..., file=sys.stderr)` or `logging` - which ends up in the Claude Desktop server log (`%APPDATA%\Claude\logs\mcp-server-kicad.log`).
 3. The MCP Inspector tool
 
 ## Performance Considerations

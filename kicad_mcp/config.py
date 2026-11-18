@@ -17,7 +17,6 @@ Module Variables:
     CIRCUIT_DEFAULTS (Dict[str, Union[float, List[float]]]): Default circuit parameters
     COMMON_LIBRARIES (Dict[str, Dict[str, Dict[str, str]]]): Component library mappings
     DEFAULT_FOOTPRINTS (Dict[str, List[str]]): Default footprint suggestions per component
-    TIMEOUT_CONSTANTS (Dict[str, float]): Operation timeout values in seconds
     PROGRESS_CONSTANTS (Dict[str, int]): Progress reporting percentage values
     DISPLAY_CONSTANTS (Dict[str, int]): UI display configuration values
 
@@ -60,11 +59,10 @@ else:
     _DEFAULT_USER_DIR = os.path.expanduser("~/Documents/KiCad")
     _DEFAULT_APP_PATH = "/Applications/KiCad/KiCad.app"
 
-# Load kicad-mcp-config.json from Claude Extensions Settings directory
+# Load kicad-mcp-config.json from Claude Extensions Settings directory (KICAD_USER_DIR only)
 _MCP_CONFIG_FILE = os.path.join(_CLAUDE_EXTENSIONS_DIR, "kicad-mcp-config.json")
 _mcp_config = {
     "KICAD_USER_DIR": _DEFAULT_USER_DIR,
-    "KICAD_APP_PATH": _DEFAULT_APP_PATH,
 }
 try:
     if os.path.isfile(_MCP_CONFIG_FILE):
@@ -78,6 +76,7 @@ except Exception as e:
     print(f"[Warning] Could not load or save config file: {e}", file=sys.stderr)
 
 KICAD_USER_DIR = _mcp_config.get("KICAD_USER_DIR", _DEFAULT_USER_DIR)
+# KiCad installation (kicad-cli, ngspice) is set here only
 KICAD_APP_PATH = _DEFAULT_APP_PATH
 
 # Additional search paths from environment variable KICAD_SEARCH_PATHS
@@ -193,15 +192,6 @@ DEFAULT_FOOTPRINTS = {
     ],
     "LED": ["LED_SMD:LED_0805_2012Metric", "LED_THT:LED_D5.0mm"],
     "D": ["Diode_SMD:D_SOD-123", "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal"],
-}
-
-# Operation timeout values in seconds for external process management
-# Prevents hanging operations and provides user feedback
-TIMEOUT_CONSTANTS = {
-    "kicad_cli_version_check": 10.0,  # Timeout for KiCad CLI version checks
-    "kicad_cli_export": 30.0,  # Timeout for KiCad CLI export operations
-    "application_open": 10.0,  # Timeout for opening applications (e.g., KiCad)
-    "subprocess_default": 30.0,  # Default timeout for subprocess operations
 }
 
 # Progress percentage milestones for long-running operations
