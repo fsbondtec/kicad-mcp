@@ -136,7 +136,7 @@ def select_block(graph, seed_refs, simulatable, max_hops=DEFAULT_MAX_HOPS,
             truncation_reason = f"max_hops={max_hops} reached"
             continue
 
-        for net in graph.adjacency_list[comp]:
+        for net in sorted(graph.adjacency_list[comp]):
             if net in graph.power_symbols:
                 continue
 
@@ -145,7 +145,7 @@ def select_block(graph, seed_refs, simulatable, max_hops=DEFAULT_MAX_HOPS,
                 high_fanout[net] = fanout
                 continue
 
-            for nb in graph.adjacency_list[net]:
+            for nb in sorted(graph.adjacency_list[net]):
                 if nb in visited:
                     continue
 

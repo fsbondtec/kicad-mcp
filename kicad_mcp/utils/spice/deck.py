@@ -15,6 +15,10 @@ from kicad_mcp.utils.spice.block import (
 # a SPICE number: digits, optional exponent, then letters for the suffix and unit ("4.7k", "1e-6", "100nF", "1Meg")
 SPICE_VALUE_RE = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?[a-z]*$", re.I)
 
+# a capacitance with the unit F but no prefix ('1F', '0.47F'): SPICE reads the F as femto;
+# a lower-case '10f' is usually meant as femto and stays quiet
+FARAD_NO_PREFIX_RE = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?F$")
+
 # passive parts
 PASSIVE_DEVICES = frozenset("RCL")
 
@@ -337,6 +341,11 @@ def validate_deck(deck: str) -> dict:
                 errors.append(f"{tokens[0]}: kein Wert (Bauteil DNP/NC?).")
             else:
                 errors.append(f"{tokens[0]}: Wert '{tokens[3]}' ist keine SPICE-Zahl.")
+        elif tokens[0][:1].upper() == "C" and len(tokens) >= 4 \
+                and FARAD_NO_PREFIX_RE.match(tokens[3]):
+            number = tokens[3][:-1]
+            warnings.append(f"{tokens[0]}: '{tokens[3]}' bedeutet in SPICE {number} Femtofarad. "
+                            f"Fuer {number} Farad '{number}' schreiben.")
 
     node_of = lambda n: "0" if n.lower() == "gnd" else n
 

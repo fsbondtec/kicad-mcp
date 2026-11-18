@@ -6,6 +6,7 @@ and reports the result of its .op / .ac / .tran analysis.
 import glob
 import logging
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -16,6 +17,10 @@ from kicad_mcp.utils.cli_drc import KICAD_CLI_NOT_FOUND, find_kicad_cli
 from kicad_mcp.utils.spice.deck import validate_deck
 
 _NGSPICE_LOCK = threading.Lock()
+
+# ngspice messages that come without 'Warning:' but change nothing: a model parameter
+# Reported as warnings, not as errors.
+_HARMLESS_RE = re.compile(r"^(\.model\s|unrecognized parameter .* - ignored)", re.I)
 
 
 class _LogCollector(logging.Handler):
@@ -89,6 +94,20 @@ def _load_code_models(bin_dir: str, warnings: list) -> None:
                         "POLY-Quellen (viele Hersteller-Opamps) oder Digitalmodellen scheitern.")
     else:
         _code_models_loaded = True
+
+
+def _reload_ngspice() -> None:
+    """Load the ngspice library again after an error it cannot recover from"""
+    global _code_models_loaded
+    from PySpice.Spice.NgSpice.Shared import NgSpiceShared, ffi
+
+    ngspice = NgSpiceShared.new_instance()
+    ffi.dlclose(ngspice._ngspice_shared)
+    ngspice._ngspice_shared = ffi.dlopen(ngspice.library_path)
+    if not isinstance(ngspice._ngspice_id, int):
+        ngspice._ngspice_id = ngspice._ngspice_id[0]     
+    ngspice._init_ngspice(False)
+    _code_models_loaded = False                         
 
 
 def _plot_svg(ngspice, analysis, nodes, warnings, max_nodes=8):
@@ -223,12 +242,21 @@ def run_deck(deck: str) -> dict:
         finally:
             pyspice_logger.removeHandler(collector)
             pyspice_logger.setLevel(prev_level)
+            if any("cannot recover" in record.lower() for record in collector.records):
+                try:
+                    _reload_ngspice()
+                    out["warnings"].append("ngspice wurde nach diesem Fehler neu geladen, die "
+                                           "naechste Simulation laeuft wieder normal.")
+                except Exception as e:
+                    out["errors"].append(f"ngspice konnte nach dem Fehler nicht neu geladen werden "
+                                         f"({type(e).__name__}: {e}) - weitere Simulationen "
+                                         "scheitern bis zum Neustart von Claude Desktop.")
 
     for line in dict.fromkeys(collector.records):
         low = line.lower()
         message = line.split(":", 1)[-1].strip().lower()
         if low.startswith("error") and not message.startswith("note:"):
-            out["errors"].append(line)
+            (out["warnings"] if _HARMLESS_RE.match(message) else out["errors"]).append(line)
         elif low.startswith("warning") and "spinit" not in low \
                 and "unsupported ngspice" not in low:
             out["warnings"].append(line)
